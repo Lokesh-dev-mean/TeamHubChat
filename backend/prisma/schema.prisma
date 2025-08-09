@@ -1,0 +1,208 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  domain    String   @unique
+  createdAt DateTime @default(now())
+  users     User[]
+  connections TenantConnection[] @relation("TenantConnections")
+  connectedTo TenantConnection[] @relation("ConnectedTenants")
+  auditLogs AuditLog[]
+  media     MediaFile[]
+  conversations Conversation[]
+  invitations Invitation[]
+  settings  TenantSettings?
+}
+
+model TenantConnection {
+  id                String   @id @default(uuid())
+  tenant           Tenant   @relation("TenantConnections", fields: [tenantId], references: [id])
+  tenantId         String
+  connectedTenant  Tenant   @relation("ConnectedTenants", fields: [connectedTenantId], references: [id])
+  connectedTenantId String
+  status           String   @default("approved")
+  createdAt        DateTime @default(now())
+}
+
+model User {
+  id           String   @id @default(uuid())
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId     String
+  email        String   @unique
+  passwordHash String
+  displayName  String
+  avatarUrl    String?
+  role         String   @default("member") // admin, moderator, member, guest
+  permissions  String[] @default([]) // Array of permission strings
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  conversationsCreated Conversation[] @relation("CreatedBy")
+  messages     Message[]
+  conversationParticipants ConversationParticipant[]
+  reactions    MessageReaction[]
+  typingStates TypingIndicator[]
+  mediaFiles   MediaFile[]
+  auditLogs    AuditLog[]
+  frequentConversations FrequentConversation[]
+  roleAssignments UserRole[]
+  invitations  Invitation[]
+}
+
+model Conversation {
+  id           String   @id @default(uuid())
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId     String
+  name         String
+  isGroup      Boolean  @default(false)
+  crossTenant  Boolean  @default(false)
+  createdBy    User     @relation("CreatedBy", fields: [createdById], references: [id])
+  createdById  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+  participants ConversationParticipant[]
+  messages     Message[]
+  frequentConversations FrequentConversation[]
+  typingIndicators TypingIndicator[]
+}
+
+model ConversationParticipant {
+  id             String        @id @default(uuid())
+  conversation   Conversation  @relation(fields: [conversationId], references: [id])
+  conversationId String
+  user           User          @relation(fields: [userId], references: [id])
+  userId         String
+  joinedAt       DateTime      @default(now())
+}
+
+model Message {
+  id              String        @id @default(uuid())
+  conversation    Conversation  @relation(fields: [conversationId], references: [id])
+  conversationId  String
+  sender          User          @relation(fields: [senderId], references: [id])
+  senderId        String
+  messageText     String?
+  fileUrl         String?
+  messageType     String        @default("text") // "text", "file"
+  edited          Boolean       @default(false)
+  editedAt        DateTime?
+  createdAt       DateTime      @default(now())
+  deletedAt       DateTime?
+  reactions       MessageReaction[]
+}
+
+model MessageReaction {
+  id        String   @id @default(uuid())
+  message   Message  @relation(fields: [messageId], references: [id])
+  messageId String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+}
+
+model TypingIndicator {
+  id             String        @id @default(uuid())
+  conversation   Conversation  @relation(fields: [conversationId], references: [id])
+  conversationId String
+  user           User          @relation(fields: [userId], references: [id])
+  userId         String
+  isTyping       Boolean       @default(false)
+  updatedAt      DateTime      @default(now())
+}
+
+model FrequentConversation {
+  id              String        @id @default(uuid())
+  user            User          @relation(fields: [userId], references: [id])
+  userId          String
+  conversation    Conversation  @relation(fields: [conversationId], references: [id])
+  conversationId  String
+  accessCount     Int           @default(0)
+  lastAccessed    DateTime      @default(now())
+}
+
+model MediaFile {
+  id          String   @id @default(uuid())
+  uploadedBy  User     @relation(fields: [uploadedById], references: [id])
+  uploadedById String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId    String
+  fileUrl     String
+  fileType    String
+  size        BigInt
+  uploadedAt  DateTime @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId   String
+  user       User?    @relation(fields: [userId], references: [id])
+  userId     String?
+  action     String
+  targetId   String
+  context    String?
+  createdAt  DateTime @default(now())
+}
+
+model Role {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  description String?
+  permissions String[]   @default([])
+  isDefault   Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  userRoles   UserRole[]
+}
+
+model UserRole {
+  id       String   @id @default(uuid())
+  user     User     @relation(fields: [userId], references: [id])
+  userId   String
+  role     Role     @relation(fields: [roleId], references: [id])
+  roleId   String
+  assignedAt DateTime @default(now())
+  assignedBy String?
+  
+  @@unique([userId, roleId])
+}
+
+model Invitation {
+  id           String    @id @default(uuid())
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  tenantId     String
+  email        String
+  role         String    @default("member")
+  permissions  String[]  @default([])
+  inviteToken  String    @unique
+  invitedBy    User      @relation(fields: [invitedById], references: [id])
+  invitedById  String
+  status       String    @default("pending") // pending, accepted, expired, revoked
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  
+  @@unique([tenantId, email])
+}
+
+model TenantSettings {
+  id                    String   @id @default(uuid())
+  tenant               Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId             String   @unique
+  allowGuestAccess     Boolean  @default(false)
+  requireInviteApproval Boolean  @default(true)
+  maxFileSize          BigInt   @default(52428800) // 50MB in bytes
+  allowedFileTypes     String[] @default(["image/jpeg", "image/png", "application/pdf"])
+  messageRetentionDays Int?     // null means forever
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}

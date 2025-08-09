@@ -1,0 +1,215 @@
+# ===========================================
+# TeamHub Backend - Git Ignore Configuration
+# ===========================================
+
+# ===========================================
+# SECURITY - NEVER COMMIT THESE!
+# ===========================================
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.backup
+
+# API Keys and configuration
+config/secrets.json
+secrets/
+oauth-config.json
+
+# JWT secrets and keys
+*.key
+*.pem
+*.p12
+*.pfx
+jwt-private.key
+jwt-public.key
+
+# ===========================================
+# DEPENDENCIES
+# ===========================================
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Package files
+package-lock.json.backup
+yarn.lock.backup
+
+# ===========================================
+# DATABASE
+# ===========================================
+# Local database files
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-shm
+*.db-wal
+dev.db*
+
+# Database backups and exports
+database/backups/
+*.sql.backup
+*.dump
+migrations/*.backup
+
+# Prisma
+prisma/dev.db*
+prisma/*.backup
+
+# ===========================================
+# FILE STORAGE
+# ===========================================
+# User uploads
+uploads/
+!uploads/.gitkeep
+!uploads/README.md
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+*.temp
+
+# Media processing
+media-temp/
+processing/
+
+# ===========================================
+# LOGS
+# ===========================================
+# Application logs
+logs/
+*.log
+*.log.*
+error.log
+access.log
+combined.log
+app.log
+
+# PM2 logs
+pm2-logs/
+
+# ===========================================
+# TESTING
+# ===========================================
+# Test coverage
+coverage/
+*.lcov
+.nyc_output/
+test-results/
+junit.xml
+
+# Test files
+*.test.db
+test-uploads/
+
+# ===========================================
+# BUILD & DEPLOYMENT
+# ===========================================
+# Build output
+dist/
+build/
+out/
+
+# Deployment files
+.serverless/
+.deployment/
+
+# Docker
+Dockerfile.local
+docker-compose.override.yml
+
+# ===========================================
+# DEVELOPMENT
+# ===========================================
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+Desktop.ini
+
+# Cache
+.cache/
+.eslintcache
+
+# ===========================================
+# API DOCUMENTATION
+# ===========================================
+# Generated API docs
+swagger-output.json
+api-docs/generated/
+
+# Postman collections (keep examples)
+postman/*-local.json
+postman/*-temp.json
+
+# ===========================================
+# MONITORING & ANALYTICS
+# ===========================================
+# Performance monitoring
+newrelic.js
+newrelic_agent.log
+
+# Analytics
+analytics/local/
+metrics/temp/
+
+# ===========================================
+# BACKUP FILES
+# ===========================================
+*.backup
+*.bak
+*.old
+*.orig
+
+# ===========================================
+# SSL & CERTIFICATES
+# ===========================================
+ssl/
+certificates/
+*.crt
+*.csr
+*.key
+*.pem
+
+# ===========================================
+# RUNTIME DATA
+# ===========================================
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# ===========================================
+# TEAMHUB SPECIFIC
+# ===========================================
+# OAuth test files
+oauth-test.*
+test-oauth.*
+
+# Local configuration overrides
+config.local.js
+environment.local.js
+
+# Development scripts
+scripts/dev/
+dev-scripts/
+
+# Local data
+data/local/
+fixtures/local/

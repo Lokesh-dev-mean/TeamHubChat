@@ -1,0 +1,41 @@
+{
+  "name": "teamhub-backend",
+  "version": "1.0.0",
+  "description": "TeamHub Communication Platform Backend",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "test": "jest",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.12.0",
+    "aws-sdk": "^2.1692.0",
+    "axios": "^1.6.2",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-validator": "^7.0.1",
+    "google-auth-library": "^9.4.0",
+    "jsonwebtoken": "^9.0.1",
+    "mime-types": "^3.0.1",
+    "multer": "^2.0.2",
+    "multer-s3": "^3.0.1",
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0",
+    "socket.io": "^4.7.2",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "jest": "^29.6.4",
+    "nodemon": "^3.0.1",
+    "prisma": "^6.12.0",
+    "supertest": "^6.3.3"
+  }
+}
