@@ -1,7 +1,8 @@
+/// <reference types="vite/client" />
 import axios from 'axios';
 import { PublicClientApplication } from '@azure/msal-browser';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 // Types
 export interface User {
@@ -51,19 +52,45 @@ export interface RegisterTenantData {
 const msalConfig = {
   auth: {
     clientId: import.meta.env.VITE_MICROSOFT_CLIENT_ID || '',
-    authority: 'https://login.microsoftonline.com/common',
-    redirectUri: window.location.origin,
+    authority: 'https://login.microsoftonline.com/common', // Use 'common' for better compatibility
+    redirectUri: `${window.location.origin}/`,
+    postLogoutRedirectUri: `${window.location.origin}/`,
+    navigateToLoginRequestUrl: false, // Prevent redirect loops
   },
   cache: {
     cacheLocation: 'sessionStorage',
     storeAuthStateInCookie: false,
   },
+  system: {
+    allowNativeBroker: false, // Disables WAM Broker
+    windowHashTimeout: 60000,
+    iframeHashTimeout: 6000,
+    loadFrameTimeout: 0,
+    loggerOptions: {
+      loggerCallback: (level: any, message: string, containsPii: boolean) => {
+        if (containsPii) {
+          return;
+        }
+        // Only log errors to reduce noise
+        if (level <= 1) {
+          console.error(`[MSAL] ${message}`);
+        }
+      },
+      piiLoggingEnabled: false,
+      logLevel: 1, // Only errors
+    },
+  },
 };
 
 export const msalInstance = new PublicClientApplication(msalConfig);
 
+// Initialize MSAL instance
+msalInstance.initialize().catch(error => {
+  console.error('MSAL initialization failed:', error);
+});
+
 class AuthService {
-  private apiClient = axios.create({
+  private readonly apiClient = axios.create({
     baseURL: API_BASE,
     headers: {
       'Content-Type': 'application/json',
@@ -82,13 +109,33 @@ class AuthService {
 
     // Handle token expiration
     this.apiClient.interceptors.response.use(
-      (response) => response,
+      (response) => {
+        // Auto-toast success messages when present
+        try {
+          const msg = response?.data?.message;
+          if (msg) {
+            // Dynamically import to avoid circular deps; ensure rejection handled
+            import('../utils/toast')
+              .then(({ toast }) => toast.success(msg))
+              .catch(() => {});
+          }
+        } catch {}
+        return response;
+      },
       (error) => {
         if (error.response?.status === 401) {
+          // Silent logout; let route guards handle navigation to login
           this.logout();
-          window.location.href = '/login';
         }
-        return Promise.reject(error);
+        const serverMessage = error.response?.data?.message || error.response?.data?.error?.message;
+        // Auto-toast error messages
+        try {
+          const msg = serverMessage || error.message || 'API request failed';
+          import('../utils/toast')
+            .then(({ toast }) => toast.error(msg))
+            .catch(() => {});
+        } catch {}
+        return Promise.reject(new Error(serverMessage || error.message || 'API request failed'));
       }
     );
   }
@@ -121,7 +168,9 @@ class AuthService {
   }
 
   isAuthenticated(): boolean {
-    return !!this.getToken() && !!this.getUser();
+    // Consider the user authenticated if a token exists.
+    // User details will be refreshed on app init via /auth/me
+    return !!this.getToken();
   }
 
   logout(): void {
@@ -191,6 +240,39 @@ class AuthService {
   }
 
   // Google OAuth
+  generateOAuthState(): string {
+    const state = Math.random().toString(36).substring(2);
+    const stateData = {
+      value: state,
+      timestamp: Date.now()
+    };
+    sessionStorage.setItem('google_oauth_state', JSON.stringify(stateData));
+    return state;
+  }
+
+  async exchangeGoogleCode(code: string): Promise<any> {
+    try {
+      const response = await this.apiClient.post('/auth/google/exchange', {
+        code,
+        redirectUri: `${window.location.origin}/auth/google/callback`,
+        clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID // Add client ID to help backend validation
+      });
+      const data = response.data;
+      if (!data?.success) {
+        throw new Error(data?.message || 'Failed to exchange authorization code');
+      }
+      // Normalize shape to always expose data.idToken
+      const idToken = data.data?.idToken || data?.idToken;
+      if (!idToken) {
+        throw new Error('Failed to exchange authorization code');
+      }
+      return { success: true, data: { idToken, accessToken: data.data?.accessToken || data?.accessToken } };
+    } catch (error: any) {
+      console.error('Google code exchange error:', error.response?.data || error);
+      throw new Error(error.response?.data?.message || 'Failed to exchange authorization code');
+    }
+  }
+
   async handleGoogleAuth(
     googleToken: string,
     tenantData?: RegisterTenantData
@@ -252,36 +334,7 @@ class AuthService {
     return response.data;
   }
 
-  // GitHub OAuth
-  async handleGitHubAuth(
-    accessToken: string,
-    tenantData?: RegisterTenantData
-  ): Promise<AuthResponse> {
-    const response = await this.apiClient.post('/auth/github', {
-      accessToken,
-      ...tenantData,
-    });
-    
-    if (response.data.success) {
-      this.setToken(response.data.data.token);
-      this.setUser(response.data.data.user);
-    }
-    
-    return response.data;
-  }
 
-  async handleGitHubTenantAuth(domain: string, accessToken: string): Promise<AuthResponse> {
-    const response = await this.apiClient.post(`/auth/tenant/${domain}/github`, {
-      accessToken,
-    });
-    
-    if (response.data.success) {
-      this.setToken(response.data.data.token);
-      this.setUser(response.data.data.user);
-    }
-    
-    return response.data;
-  }
 
   // Microsoft OAuth Helper Methods
   async microsoftLogin(tenantData?: RegisterTenantData): Promise<AuthResponse> {

@@ -33,8 +33,8 @@ class EnvironmentConfig {
   // ===========================================
   get frontend() {
     return {
-      url: process.env.FRONTEND_URL || 'http://localhost:3000',
-      domain: process.env.FRONTEND_DOMAIN || 'localhost:3000'
+      url: process.env.FRONTEND_URL || 'http://localhost:5173',
+      domain: process.env.FRONTEND_DOMAIN || 'localhost:5173'
     };
   }
 
@@ -80,6 +80,7 @@ class EnvironmentConfig {
       google: {
         clientId: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackUrl: process.env.GOOGLE_REDIRECT_URI || `${this.frontend.url}/auth/google/callback`,
         enabled: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
       },
       microsoft: {
@@ -129,9 +130,15 @@ class EnvironmentConfig {
   // CORS CONFIGURATION
   // ===========================================
   get cors() {
-    const origins = process.env.CORS_ORIGIN 
-      ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
-      : ['http://localhost:3000', 'http://127.0.0.1:3000'];
+    const originsRaw = process.env.CORS_ORIGINS || process.env.CORS_ORIGIN;
+    const origins = originsRaw
+      ? originsRaw.split(',').map(origin => origin.trim())
+      : [
+          'http://localhost:5173',
+          'http://127.0.0.1:5173',
+          'http://localhost:3000',
+          'http://127.0.0.1:3000'
+        ];
 
     return {
       origin: origins,
@@ -159,9 +166,10 @@ class EnvironmentConfig {
   // WEBSOCKET CONFIGURATION
   // ===========================================
   get websocket() {
-    const corsOrigins = process.env.WEBSOCKET_CORS_ORIGIN 
-      ? process.env.WEBSOCKET_CORS_ORIGIN.split(',').map(origin => origin.trim())
-      : ['http://localhost:3000', 'http://127.0.0.1:3000'];
+    const corsOriginsRaw = process.env.WEBSOCKET_CORS_ORIGINS || process.env.WEBSOCKET_CORS_ORIGIN;
+    const corsOrigins = corsOriginsRaw
+      ? corsOriginsRaw.split(',').map(origin => origin.trim())
+      : ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000', 'http://127.0.0.1:3000'];
 
     return {
       corsOrigin: corsOrigins,

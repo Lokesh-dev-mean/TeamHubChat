@@ -1,7 +1,7 @@
 const express = require('express');
 const { query } = require('express-validator');
 const router = express.Router();
-const auth = require('../middleware/auth.middleware');
+const { auth } = require('../middleware/auth.middleware');
 const searchController = require('../controllers/search.controller');
 
 /**

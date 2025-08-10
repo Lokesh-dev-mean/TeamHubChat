@@ -3,6 +3,7 @@ const { validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const config = require('../config/environment');
+const { sendInviteEmail } = require('../services/email.service');
 
 /**
  * Get tenant dashboard stats
@@ -423,7 +424,9 @@ const sendInvitation = async (req, res) => {
         tenantId,
         email,
         role,
-        permissions,
+        permissions: Array.isArray(permissions)
+          ? JSON.stringify(permissions)
+          : (typeof permissions === 'string' ? permissions : '[]'),
         inviteToken,
         invitedById: userId,
         expiresAt
@@ -431,8 +434,7 @@ const sendInvitation = async (req, res) => {
       include: {
         tenant: {
           select: {
-            name: true,
-            domain: true
+            name: true
           }
         },
         invitedBy: {
@@ -455,8 +457,37 @@ const sendInvitation = async (req, res) => {
       }
     });
 
-    // TODO: Send actual email invitation
-    // For now, return the invitation details
+    // Emit realtime event for pending invitation
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.to(tenantId).emit('invitation-created', {
+          invitation: {
+            id: invitation.id,
+            email: invitation.email,
+            role: invitation.role,
+            expiresAt: invitation.expiresAt,
+            inviteToken: invitation.inviteToken
+          }
+        });
+      }
+    } catch {}
+
+    // Send invitation email (non-blocking for API success)
+    try {
+      const inviteUrl = `${config.frontend.url}/invite/${invitation.inviteToken}`;
+      await sendInviteEmail({
+        to: invitation.email,
+        inviteUrl,
+        tenantName: invitation.tenant.name,
+        invitedByName: invitation.invitedBy.displayName || 'An administrator'
+      });
+    } catch (emailError) {
+      console.error('Failed to send invitation email via Brevo:', emailError);
+      // Do not fail the API response because email dispatch failed
+    }
+
+    // Return the invitation details
     res.status(201).json({
       success: true,
       message: 'Invitation sent successfully',
@@ -465,7 +496,7 @@ const sendInvitation = async (req, res) => {
           id: invitation.id,
           email: invitation.email,
           role: invitation.role,
-          permissions: invitation.permissions,
+          permissions: (() => { try { return JSON.parse(invitation.permissions); } catch { return []; } })(),
           inviteToken: invitation.inviteToken,
           expiresAt: invitation.expiresAt,
           inviteUrl: `${config.frontend.url}/invite/${invitation.inviteToken}`

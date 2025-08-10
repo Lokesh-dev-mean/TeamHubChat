@@ -16,8 +16,9 @@ interface AuthContextType {
   ) => Promise<void>;
   googleAuth: (token: string, tenantName?: string, tenantDomain?: string) => Promise<void>;
   googleTenantAuth: (domain: string, token: string) => Promise<void>;
-  microsoftAuth: (tenantName?: string, tenantDomain?: string) => Promise<void>;
+  microsoftAuth: (accessToken: string, tenantName?: string, tenantDomain?: string) => Promise<void>;
   microsoftTenantAuth: (domain: string) => Promise<void>;
+  completeGoogleRegistration: (idToken: string, tenantName: string, tenantDomain?: string) => Promise<void>;
   logout: () => Promise<void>;
   error: string | null;
   clearError: () => void;
@@ -47,18 +48,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const initializeAuth = async () => {
       try {
         if (authService.isAuthenticated()) {
-          const storedUser = authService.getUser();
-          if (storedUser) {
-            // Verify token is still valid
-            try {
-              const currentUser = await authService.getCurrentUser();
+          // If we have a token, fetch fresh user from backend
+          try {
+            const hasMethod = typeof (authService as any).getCurrentUser === 'function';
+            if (hasMethod) {
+              const currentUser = await (authService as any).getCurrentUser();
               setUser(currentUser);
-            } catch (error) {
-              // Token is invalid, clear auth state
-              authService.logout();
-              setUser(null);
+            } else {
+              const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+              const token = localStorage.getItem('token');
+              const resp = await fetch(`${apiBase}/auth/me`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (!resp.ok) throw new Error(`Failed to load user: ${resp.status}`);
+              const data = await resp.json();
+              setUser(data?.data?.user ?? null);
             }
+          } catch (error) {
+            console.error('Failed to get current user:', error);
+            authService.logout();
+            setUser(null);
           }
+        } else {
+          // No token -> ensure logged out state
+          authService.logout();
+          setUser(null);
         }
       } catch (error) {
         console.error('Auth initialization failed:', error);
@@ -123,7 +137,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       setIsLoading(true);
       setError(null);
-      const tenantData = tenantName && tenantDomain ? { tenantName, tenantDomain } : undefined;
+      
+      const tenantData = tenantName ? {
+        tenantName,
+        tenantDomain: tenantDomain || tenantName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20)
+      } : undefined;
+      
       const response = await authService.register(email, password, displayName, tenantData);
       handleAuthResponse(response);
     } catch (error: any) {
@@ -134,16 +153,59 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const googleAuth = async (token: string, tenantName?: string, tenantDomain?: string) => {
+  const googleAuth = async (code: string, tenantName?: string, tenantDomain?: string): Promise<void> => {
     try {
       setIsLoading(true);
       setError(null);
-      const tenantData = tenantName && tenantDomain ? { tenantName, tenantDomain } : undefined;
-      const response = await authService.handleGoogleAuth(token, tenantData);
+      
+      // First exchange the code for tokens
+      const exchangeResponse = await authService.exchangeGoogleCode(code);
+      
+      if (!exchangeResponse.success || !exchangeResponse.data?.idToken) {
+        throw new Error('Failed to exchange authorization code');
+      }
+      
+      const tenantData = tenantName ? {
+        tenantName,
+        tenantDomain: tenantDomain || tenantName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20)
+      } : undefined;
+      
+      // Persist ID token in case backend requires tenant details to complete registration
+      sessionStorage.setItem('pending_google_id_token', exchangeResponse.data.idToken);
+      
+      // Then authenticate with the ID token
+      const response = await authService.handleGoogleAuth(exchangeResponse.data.idToken, tenantData);
       handleAuthResponse(response);
+      // Clean up pending token on success
+      sessionStorage.removeItem('pending_google_id_token');
     } catch (error: any) {
-      setError(error.response?.data?.message || error.message || 'Google authentication failed');
-      throw error;
+      const errorMessage = error.response?.data?.message || error.message || 'Google authentication failed';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const completeGoogleRegistration = async (
+    idToken: string,
+    tenantName: string,
+    tenantDomain?: string
+  ) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const tenantData = {
+        tenantName,
+        tenantDomain: tenantDomain || tenantName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20)
+      };
+      const response = await authService.handleGoogleAuth(idToken, tenantData);
+      handleAuthResponse(response);
+      sessionStorage.removeItem('pending_google_id_token');
+    } catch (error: any) {
+      const message = error.response?.data?.message || error.message || 'Google registration failed';
+      setError(message);
+      throw new Error(message);
     } finally {
       setIsLoading(false);
     }
@@ -163,12 +225,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const microsoftAuth = async (tenantName?: string, tenantDomain?: string) => {
+  const microsoftAuth = async (accessToken: string, tenantName?: string, tenantDomain?: string) => {
     try {
       setIsLoading(true);
       setError(null);
-      const tenantData = tenantName && tenantDomain ? { tenantName, tenantDomain } : undefined;
-      const response = await authService.microsoftLogin(tenantData);
+      
+      const tenantData = tenantName ? {
+        tenantName,
+        tenantDomain: tenantDomain || tenantName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20)
+      } : undefined;
+      
+      const response = await authService.handleMicrosoftAuth(accessToken, tenantData);
       handleAuthResponse(response);
     } catch (error: any) {
       setError(error.message || 'Microsoft authentication failed');
@@ -191,6 +258,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setIsLoading(false);
     }
   };
+
+
 
   const logout = async () => {
     try {
@@ -219,6 +288,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     googleTenantAuth,
     microsoftAuth,
     microsoftTenantAuth,
+    completeGoogleRegistration,
     logout,
     error,
     clearError,

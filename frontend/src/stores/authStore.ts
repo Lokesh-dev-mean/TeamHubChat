@@ -24,6 +24,7 @@ interface AuthState {
     password: string
     firstName?: string
     lastName?: string
+    tenantName?: string
   }) => Promise<void>
   logout: () => void
   checkAuth: () => Promise<void>

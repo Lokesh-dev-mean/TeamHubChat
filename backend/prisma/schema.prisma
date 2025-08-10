@@ -3,14 +3,13 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 model Tenant {
   id        String   @id @default(uuid())
   name      String
-  domain    String   @unique
   createdAt DateTime @default(now())
   users     User[]
   connections TenantConnection[] @relation("TenantConnections")
@@ -41,7 +40,7 @@ model User {
   displayName  String
   avatarUrl    String?
   role         String   @default("member") // admin, moderator, member, guest
-  permissions  String[] @default([]) // Array of permission strings
+  permissions  String @default("[]") // JSON array of permission strings
   isActive     Boolean  @default(true)
   lastLoginAt  DateTime?
   createdAt    DateTime @default(now())
@@ -158,7 +157,7 @@ model Role {
   id          String     @id @default(uuid())
   name        String     @unique
   description String?
-  permissions String[]   @default([])
+  permissions String @default("[]") // JSON array
   isDefault   Boolean    @default(false)
   createdAt   DateTime   @default(now())
   userRoles   UserRole[]
@@ -182,7 +181,7 @@ model Invitation {
   tenantId     String
   email        String
   role         String    @default("member")
-  permissions  String[]  @default([])
+  permissions  String @default("[]") // JSON array
   inviteToken  String    @unique
   invitedBy    User      @relation(fields: [invitedById], references: [id])
   invitedById  String
@@ -201,7 +200,7 @@ model TenantSettings {
   allowGuestAccess     Boolean  @default(false)
   requireInviteApproval Boolean  @default(true)
   maxFileSize          BigInt   @default(52428800) // 50MB in bytes
-  allowedFileTypes     String[] @default(["image/jpeg", "image/png", "application/pdf"])
+  allowedFileTypes     String @default("[\"image/jpeg\", \"image/png\", \"application/pdf\"]") // JSON array of MIME types
   messageRetentionDays Int?     // null means forever
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt

@@ -8,7 +8,6 @@ import {
   TextField,
   Button,
   Divider,
-  Alert,
   CircularProgress,
   InputAdornment,
   IconButton,
@@ -20,15 +19,16 @@ import {
   Person as PersonIcon,
   Email as EmailIcon,
   Lock as LockIcon,
-  Domain as DomainIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
-import GoogleOAuthButton from '../components/GoogleOAuthButton';
+import { useToast } from '../contexts/ToastContext';
+import GoogleOAuthButtonDirect from '../components/GoogleOAuthButtonDirect';
 import MicrosoftOAuthButton from '../components/MicrosoftOAuthButton';
 
 const TenantRegister: React.FC = () => {
   const navigate = useNavigate();
-  const { register, googleAuth, microsoftAuth, isLoading, error, clearError } = useAuth();
+  const { register, completeGoogleRegistration, microsoftAuth, isLoading, error, clearError } = useAuth();
+  const toast = useToast();
 
   const [formData, setFormData] = useState({
     email: '',
@@ -36,7 +36,7 @@ const TenantRegister: React.FC = () => {
     confirmPassword: '',
     displayName: '',
     tenantName: '',
-    tenantDomain: '',
+
   });
 
   const [showPassword, setShowPassword] = useState(false);
@@ -74,13 +74,7 @@ const TenantRegister: React.FC = () => {
       errors.tenantName = 'Organization name is required';
     }
 
-    if (!formData.tenantDomain) {
-      errors.tenantDomain = 'Organization domain is required';
-    } else if (!/^[a-zA-Z0-9-]+$/.test(formData.tenantDomain)) {
-      errors.tenantDomain = 'Domain can only contain letters, numbers, and hyphens';
-    } else if (formData.tenantDomain.length < 2) {
-      errors.tenantDomain = 'Domain must be at least 2 characters';
-    }
+
 
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
@@ -100,11 +94,7 @@ const TenantRegister: React.FC = () => {
       clearError();
     }
 
-    // Auto-generate domain from tenant name if domain is empty
-    if (field === 'tenantName' && !formData.tenantDomain) {
-      const domain = value.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20);
-      setFormData(prev => ({ ...prev, tenantDomain: domain }));
-    }
+
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -119,22 +109,19 @@ const TenantRegister: React.FC = () => {
         formData.email,
         formData.password,
         formData.displayName,
-        formData.tenantName,
-        formData.tenantDomain
+        formData.tenantName
       );
+      toast.success('Organization created successfully');
       navigate('/dashboard');
     } catch (error) {
-      // Error is handled by context
+      console.error('Registration failed:', error);
+      const msg = (error instanceof Error && error.message) || 'Registration failed';
+      toast.error(msg);
     }
   };
 
-  const handleGoogleSuccess = async (token: string) => {
-    try {
-      await googleAuth(token, formData.tenantName, formData.tenantDomain);
-      navigate('/dashboard');
-    } catch (error) {
-      // Error is handled by context
-    }
+  const handleGoogleSuccess = async (_token: string) => {
+    // Not used in redirect flow
   };
 
   const handleGoogleError = (error: string) => {
@@ -143,9 +130,10 @@ const TenantRegister: React.FC = () => {
 
   const handleMicrosoftSuccess = async (accessToken: string) => {
     try {
-      await microsoftAuth(formData.tenantName, formData.tenantDomain);
+      await microsoftAuth(accessToken, formData.tenantName);
       navigate('/dashboard');
     } catch (error) {
+      console.error('Microsoft OAuth failed:', error);
       // Error is handled by context
     }
   };
@@ -154,7 +142,9 @@ const TenantRegister: React.FC = () => {
     console.error('Microsoft OAuth error:', error);
   };
 
-  const isOAuthReady = formData.tenantName && formData.tenantDomain && !formErrors.tenantName && !formErrors.tenantDomain;
+
+
+  const isOAuthReady = formData.tenantName && !formErrors.tenantName;
 
   return (
     <Container maxWidth="sm">
@@ -175,24 +165,20 @@ const TenantRegister: React.FC = () => {
           }}
         >
           <Box sx={{ textAlign: 'center', mb: 4 }}>
-            <BusinessIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
-            <Typography variant="h4" component="h1" gutterBottom>
+            <BusinessIcon sx={{ fontSize: 28, color: 'primary.main', mb: 1 }} />
+            <Typography variant="h6" component="h1" gutterBottom sx={{ fontWeight: 700 }}>
               Create Your Organization
             </Typography>
-            <Typography variant="body1" color="text.secondary">
+            <Typography variant="body2" color="text.secondary">
               Set up your TeamHub workspace and become the admin
             </Typography>
           </Box>
 
-          {error && (
-            <Alert severity="error" sx={{ mb: 3 }} onClose={clearError}>
-              {error}
-            </Alert>
-          )}
+          {/* Inline error removed; errors are shown via global toasts */}
 
           <form onSubmit={handleSubmit}>
             {/* Organization Information */}
-            <Typography variant="h6" gutterBottom sx={{ mt: 2, mb: 2 }}>
+            <Typography variant="subtitle1" gutterBottom sx={{ mt: 2, mb: 2, fontWeight: 600 }}>
               Organization Details
             </Typography>
             
@@ -213,25 +199,8 @@ const TenantRegister: React.FC = () => {
               }}
             />
 
-            <TextField
-              fullWidth
-              label="Organization Domain"
-              value={formData.tenantDomain}
-              onChange={handleInputChange('tenantDomain')}
-              error={!!formErrors.tenantDomain}
-              helperText={formErrors.tenantDomain || 'This will be your organization\'s unique identifier'}
-              margin="normal"
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <DomainIcon />
-                  </InputAdornment>
-                ),
-              }}
-            />
-
             {/* Admin User Information */}
-            <Typography variant="h6" gutterBottom sx={{ mt: 3, mb: 2 }}>
+            <Typography variant="subtitle1" gutterBottom sx={{ mt: 3, mb: 2, fontWeight: 600 }}>
               Admin Account Details
             </Typography>
 
@@ -332,11 +301,14 @@ const TenantRegister: React.FC = () => {
               variant="contained"
               size="large"
               disabled={isLoading}
-              sx={{ mt: 3, mb: 2, py: 1.5 }}
+              sx={{ mt: 3, mb: 2, py: 1 }}
             >
               {isLoading ? <CircularProgress size={24} /> : 'Create Organization'}
             </Button>
           </form>
+
+          {/* Guidance when redirected from OAuth due to missing account */}
+          {sessionStorage.getItem('oauth_register_reason') === 'no_account' && (() => { sessionStorage.removeItem('oauth_register_reason'); toast.info('No account found for OAuth login. Please register your organization.'); return null; })()}
 
           <Divider sx={{ my: 3 }}>
             <Typography variant="body2" color="text.secondary">
@@ -345,11 +317,12 @@ const TenantRegister: React.FC = () => {
           </Divider>
 
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <GoogleOAuthButton
+            <GoogleOAuthButtonDirect
               onSuccess={handleGoogleSuccess}
               onError={handleGoogleError}
               text="Create with Google"
               disabled={!isOAuthReady || isLoading}
+              tenantName={formData.tenantName}
             />
             
             <MicrosoftOAuthButton
@@ -358,12 +331,38 @@ const TenantRegister: React.FC = () => {
               text="Create with Microsoft"
               disabled={!isOAuthReady || isLoading}
             />
+
+
           </Box>
 
-          {!isOAuthReady && (
-            <Alert severity="info" sx={{ mt: 2 }}>
-              Please fill in organization details to enable OAuth registration
-            </Alert>
+          {/* Removed extra inline guidance per UX feedback */}
+
+          {/* Continue registration if we have a pending Google token */}
+          {sessionStorage.getItem('pending_google_id_token') && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Continue registration with your Google account by providing your organization name.
+              </Typography>
+              <Button
+                fullWidth
+                variant="contained"
+                disabled={isLoading || !formData.tenantName}
+                onClick={async () => {
+                  const idToken = sessionStorage.getItem('pending_google_id_token');
+                  if (!idToken) return;
+                  try {
+                    await completeGoogleRegistration(idToken, formData.tenantName);
+                    toast.success('Registration completed');
+                    navigate('/dashboard');
+                  } catch (e) {
+                    const msg = (e instanceof Error && e.message) || 'Registration failed';
+                    toast.error(msg);
+                  }
+                }}
+              >
+                Complete Registration
+              </Button>
+            </Box>
           )}
 
           <Box sx={{ textAlign: 'center', mt: 3 }}>

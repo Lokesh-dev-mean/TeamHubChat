@@ -5,6 +5,7 @@ const { Server } = require('socket.io');
 const config = require('./config/environment');
 const prisma = require('./utils/prisma');
 const { specs, swaggerUi } = require('./config/swagger');
+const { logger, requestLogger, errorLogger, errorHandler } = require('./middleware/logging.middleware');
 
 // Create Express app
 const app = express();
@@ -39,6 +40,9 @@ const corsOptions = {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors(corsOptions));
+
+// Logging middleware
+app.use(requestLogger);
 
 // Database connection is handled by Prisma client
 // Prisma will connect automatically on first query
@@ -130,6 +134,15 @@ io.use(async (socket, next) => {
 // Socket.io connection handler
 io.on('connection', (socket) => {
   console.log(`User ${socket.user.displayName} (${socket.userId}) connected`);
+  // Join tenant room for org-wide events
+  if (socket.tenantId) {
+    socket.join(socket.tenantId);
+    // Notify tenant room of activity (used for last active updates)
+    io.to(socket.tenantId).emit('user-activity', {
+      userId: socket.userId,
+      lastActiveAt: new Date().toISOString()
+    });
+  }
   
   // Join conversation rooms that user is part of
   socket.on('join-conversations', async () => {
@@ -246,6 +259,15 @@ io.on('connection', (socket) => {
             updatedAt: new Date()
           });
         });
+
+        // Also broadcast org-wide last activity timestamp
+        if (socket.tenantId) {
+          io.to(socket.tenantId).emit('user-activity', {
+            userId: socket.userId,
+            lastActiveAt: new Date().toISOString(),
+            status
+          });
+        }
       }
     } catch (error) {
       console.error('Error updating user status:', error);
@@ -273,11 +295,24 @@ io.on('connection', (socket) => {
           conversationId: conv.id
         });
       });
+
+      // Org-wide activity update
+      if (socket.tenantId) {
+        io.to(socket.tenantId).emit('user-activity', {
+          userId: socket.userId,
+          lastActiveAt: new Date().toISOString(),
+          status: 'offline'
+        });
+      }
     } catch (error) {
       console.error('Error handling disconnect:', error);
     }
   });
 });
+
+// Error handling middleware (must be after routes and socket setup)
+app.use(errorLogger);
+app.use(errorHandler);
 
 // Start server
 server.listen(config.app.port, () => {

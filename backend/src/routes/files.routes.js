@@ -1,7 +1,7 @@
 const express = require('express');
 const { query, param } = require('express-validator');
 const router = express.Router();
-const auth = require('../middleware/auth.middleware');
+const { auth } = require('../middleware/auth.middleware');
 const filesController = require('../controllers/files.controller');
 const { upload } = require('../config/storage');
 

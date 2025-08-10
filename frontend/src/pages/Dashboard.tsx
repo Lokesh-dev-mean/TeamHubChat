@@ -1,61 +1,65 @@
 import React, { useEffect, useState } from 'react';
-import { Routes, Route } from 'react-router-dom';
-import {
-  Box,
-  Container,
-  AppBar,
-  Toolbar,
-  Typography,
-  Paper,
-  Grid,
-  Card,
-  CardContent,
-  Avatar,
-  Menu,
-  MenuItem,
-  IconButton,
-  Chip,
-} from '@mui/material';
-import {
-  AccountCircle,
-  Message,
-  Group,
-  People,
-  ExitToApp,
-} from '@mui/icons-material';
+import { Box, AppBar, Toolbar, Typography, Avatar, Menu, MenuItem, IconButton, Chip, Tooltip } from '@mui/material';
+import { AccountCircle, People, ExitToApp, Chat } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
-import { io, Socket } from 'socket.io-client';
+import InviteMembersDialog from '../components/InviteMembersDialog';
+import MembersTable from '../components/org/MembersTable';
+import ProfilePanelView from '../components/profile/ProfilePanel';
+import ChatPanel from '../components/chat/ChatPanel';
+import { io } from 'socket.io-client';
+import { NavLink, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { fetchUsers, getInvitations } from '../services/adminService';
 
 const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
-  const [socket, setSocket] = useState<Socket | null>(null);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [showInvite, setShowInvite] = useState(false);
+  const navigate = useNavigate();
   
   // Connect to socket when dashboard loads
   useEffect(() => {
     if (!user) return;
 
     const baseUrl = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api$/, '');
-    const newSocket = io(baseUrl, {
+    const s = io(baseUrl, {
       auth: {
         token: localStorage.getItem('token'),
       },
     });
     
-    newSocket.on('connect', () => {
+    s.on('connect', () => {
       console.log('Connected to socket server');
     });
     
-    newSocket.on('disconnect', () => {
+    s.on('disconnect', () => {
       console.log('Disconnected from socket server');
     });
     
-    setSocket(newSocket);
-    
     // Cleanup on unmount
     return () => {
-      newSocket.disconnect();
+      s.disconnect();
     };
+  }, [user]);
+
+  // Show invite dialog on every login if tenant has not invited members yet
+  useEffect(() => {
+    if (!user || user.role !== 'admin') return;
+    (async () => {
+      try {
+        // If org still has only the first admin user
+        const { pagination } = await fetchUsers(1, 2);
+        const isSoloAdmin = (pagination?.total ?? 0) <= 1;
+        // And there are no pending invitations
+        const inv = await getInvitations('pending');
+        const hasPendingInvites = (inv?.pagination?.total ?? (inv?.invitations?.length ?? 0)) > 0;
+        if (user.isFirstUser || isSoloAdmin) {
+          setShowInvite(!hasPendingInvites);
+        }
+      } catch (e) {
+        // If check fails, do not block the UI; simply do not show the dialog
+        console.warn('Invite-check failed', e);
+      }
+    })();
   }, [user]);
 
   const handleProfileMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
@@ -77,9 +81,9 @@ const Dashboard: React.FC = () => {
   
   return (
     <Box sx={{ flexGrow: 1, minHeight: '100vh', backgroundColor: 'background.default' }}>
-      <AppBar position="static" elevation={1}>
+      <AppBar position="static" color="inherit" enableColorOnDark>
         <Toolbar>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+          <Typography variant="h6" component="div" sx={{ flexGrow: 1, letterSpacing: 0.2 }}>
             TeamHub
           </Typography>
           
@@ -126,7 +130,7 @@ const Dashboard: React.FC = () => {
             open={Boolean(anchorEl)}
             onClose={handleProfileMenuClose}
           >
-            <MenuItem onClick={handleProfileMenuClose}>
+            <MenuItem onClick={() => { handleProfileMenuClose(); navigate('/dashboard/profile'); }}>
               <AccountCircle sx={{ mr: 1 }} />
               Profile
             </MenuItem>
@@ -138,125 +142,47 @@ const Dashboard: React.FC = () => {
         </Toolbar>
       </AppBar>
 
-      <Container maxWidth="lg" sx={{ py: 4 }}>
-        <Routes>
-          <Route index element={<DashboardHome user={user} socket={socket} />} />
-          {/* Add more subroutes as needed */}
-        </Routes>
-      </Container>
+      <Box sx={{ display: 'grid', gridTemplateColumns: '72px minmax(0, 1fr)', height: 'calc(100vh - 64px)', gap: 0 }}>
+        {/* Minimal left rail with route-aware highlights */}
+        <Box sx={{ width: 72, borderRight: '1px solid', borderColor: 'divider', display: 'flex', flexDirection: 'column', alignItems: 'center', py: 2, gap: 1, backgroundColor: 'background.paper' }}>
+          <NavLink to="chat" style={{ textDecoration: 'none' }}>
+            {({ isActive }) => (
+              <Tooltip title="Chat" placement="right"><IconButton color={isActive ? 'primary' : 'default'}><Chat /></IconButton></Tooltip>
+            )}
+          </NavLink>
+          <NavLink to="organization" style={{ textDecoration: 'none' }}>
+            {({ isActive }) => (
+              <Tooltip title="Organization" placement="right"><IconButton color={isActive ? 'primary' : 'default'}><People /></IconButton></Tooltip>
+            )}
+          </NavLink>
+        </Box>
+
+        <Box sx={{ minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <Routes>
+            <Route index element={<Navigate to="chat" replace />} />
+            <Route path="chat" element={<Box sx={{ flex: 1, minHeight: 0 }}><ChatPanel /></Box>} />
+            <Route path="organization" element={<Box sx={{ p: 2 }}><MembersTable /></Box>} />
+            <Route path="profile" element={<Box sx={{ p: 2 }}><ProfilePanelView /></Box>} />
+            <Route path="*" element={<Navigate to="chat" replace />} />
+          </Routes>
+        </Box>
+      </Box>
+
+      <InviteMembersDialog 
+        open={showInvite} 
+        onSkip={() => setShowInvite(false)} 
+        onInvite={() => {
+          setShowInvite(false);
+          navigate('/organization');
+        }} 
+      />
     </Box>
   );
 };
 
-// Dashboard Home Component
-interface DashboardHomeProps {
-  user: any;
-  socket: Socket | null;
-}
 
-const DashboardHome: React.FC<DashboardHomeProps> = ({ user, socket }) => {
-  return (
-    <Box>
-      <Paper sx={{ p: 4, mb: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom>
-          Welcome to {user.tenant.name}
-        </Typography>
-        <Typography variant="body1" color="text.secondary" paragraph>
-          Hello {user.displayName}! You're connected to your organization's TeamHub workspace.
-          {user.role === 'admin' && ' As an admin, you have full access to manage your organization.'}
-        </Typography>
-        
-        <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
-          <Chip 
-            label={`Role: ${user.role}`} 
-            color="primary" 
-            variant="outlined" 
-          />
-          <Chip 
-            label={socket?.connected ? 'Connected' : 'Disconnected'} 
-            color={socket?.connected ? 'success' : 'error'}
-            variant="outlined"
-          />
-        </Box>
-      </Paper>
 
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={4}>
-          <Card>
-            <CardContent sx={{ textAlign: 'center' }}>
-              <Message sx={{ fontSize: 40, color: 'primary.main', mb: 2 }} />
-              <Typography variant="h6" component="h2">
-                Messages
-              </Typography>
-              <Typography variant="h4" component="p" sx={{ mt: 1 }}>
-                0
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Total messages sent
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
 
-        <Grid item xs={12} md={4}>
-          <Card>
-            <CardContent sx={{ textAlign: 'center' }}>
-              <People sx={{ fontSize: 40, color: 'success.main', mb: 2 }} />
-              <Typography variant="h6" component="h2">
-                Team Members
-              </Typography>
-              <Typography variant="h4" component="p" sx={{ mt: 1 }}>
-                1
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Active users in your org
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
 
-        <Grid item xs={12} md={4}>
-          <Card>
-            <CardContent sx={{ textAlign: 'center' }}>
-              <Group sx={{ fontSize: 40, color: 'secondary.main', mb: 2 }} />
-              <Typography variant="h6" component="h2">
-                Channels
-              </Typography>
-              <Typography variant="h4" component="p" sx={{ mt: 1 }}>
-                0
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Available chat channels
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      <Paper sx={{ p: 4, mt: 4 }}>
-        <Typography variant="h5" component="h2" gutterBottom>
-          Getting Started
-        </Typography>
-        <Typography variant="body1" paragraph>
-          Your TeamHub workspace is ready! Here's what you can do next:
-        </Typography>
-        <Box component="ul" sx={{ pl: 2 }}>
-          <Typography component="li" variant="body2" sx={{ mb: 1 }}>
-            Invite team members to join your organization
-          </Typography>
-          <Typography component="li" variant="body2" sx={{ mb: 1 }}>
-            Create channels for different teams or projects
-          </Typography>
-          <Typography component="li" variant="body2" sx={{ mb: 1 }}>
-            Start messaging with your team members
-          </Typography>
-          <Typography component="li" variant="body2" sx={{ mb: 1 }}>
-            Share files and collaborate on projects
-          </Typography>
-        </Box>
-      </Paper>
-    </Box>
-  );
-};
 
 export default Dashboard;

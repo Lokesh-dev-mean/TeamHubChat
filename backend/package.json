@@ -9,9 +9,15 @@
     "test": "jest",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "logs": "node scripts/view-logs.js",
+    "logs:follow": "node scripts/view-logs.js --follow",
+    "logs:error": "node scripts/view-logs.js --type error",
+    "logs:debug": "node scripts/view-logs.js --type debug",
+    "logs:stats": "node scripts/view-logs.js --help"
   },
   "dependencies": {
+    "@getbrevo/brevo": "^3.0.1",
     "@prisma/client": "^6.12.0",
     "aws-sdk": "^2.1692.0",
     "axios": "^1.6.2",
@@ -25,8 +31,10 @@
     "mime-types": "^3.0.1",
     "multer": "^2.0.2",
     "multer-s3": "^3.0.1",
+    "nodemailer": "^7.0.5",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
+    "pg": "^8.16.3",
     "socket.io": "^4.7.2",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.0",

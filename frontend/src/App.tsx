@@ -3,41 +3,95 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { MsalProvider } from '@azure/msal-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ToastProvider } from './contexts/ToastContext';
 import { msalInstance } from './services/authService';
+
+// Initialize MSAL properly
+msalInstance.initialize().then(() => {
+  msalInstance.handleRedirectPromise().catch(error => {
+    console.error('MSAL redirect handling failed:', error);
+  });
+}).catch(error => {
+  console.error('MSAL initialization failed:', error);
+});
 import TenantRegister from './pages/TenantRegister';
-import TenantLogin from './pages/TenantLogin';
+import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import NotFound from './pages/NotFound';
 import LoadingScreen from './components/LoadingScreen';
+import GoogleCallback from './pages/GoogleCallback';
+import OAuthTest from './pages/OAuthTest';
+import Invite from './pages/Invite';
+import AcceptInvite from './pages/AcceptInvite';
 
-// Create MUI theme
+// Create MUI theme – enterprise look: squared corners, neutral grays, crisp toolbar
 const theme = createTheme({
   palette: {
     primary: {
-      main: '#1976d2',
+      main: '#0B5ED7', // deeper blue
+      light: '#3D8BFF',
+      dark: '#094DB0',
     },
     secondary: {
-      main: '#dc004e',
+      main: '#6C757D', // neutral gray as secondary
     },
     background: {
-      default: '#f5f5f5',
+      default: '#F3F4F6', // neutral background
+      paper: '#FFFFFF',
     },
+    divider: 'rgba(145, 158, 171, 0.24)'
+  },
+  shape: {
+    borderRadius: 0,
   },
   typography: {
-    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
     h4: {
-      fontWeight: 600,
+      fontWeight: 700,
     },
     h6: {
-      fontWeight: 600,
+      fontWeight: 700,
     },
   },
   components: {
     MuiButton: {
       styleOverrides: {
         root: {
+          padding: '10px 16px',
           textTransform: 'none',
-          fontWeight: 500,
+          fontWeight: 600,
+          borderRadius: 0,
+        },
+      },
+    },
+    MuiOutlinedInput: {
+      styleOverrides: {
+        input: {
+          padding: '12px 14px',
+          fontSize: 14,
+          lineHeight: 1.4,
+        },
+      },
+    },
+    MuiInputBase: {
+      styleOverrides: {
+        input: {
+          paddingTop: 8,
+          paddingBottom: 8,
+          fontSize: 14,
+          lineHeight: 1.4,
+        },
+        inputAdornedStart: {
+          paddingLeft: 0,
+          paddingTop: 8,
+          paddingBottom: 8,
+        },
+      },
+    },
+    MuiSvgIcon: {
+      styleOverrides: {
+        root: {
+          fontSize: '18px',
         },
       },
     },
@@ -45,32 +99,44 @@ const theme = createTheme({
       styleOverrides: {
         root: {
           backgroundImage: 'none',
+          borderRadius: 0,
+          boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
         },
       },
     },
+    MuiAppBar: {
+      styleOverrides: {
+        root: {
+          boxShadow: 'none',
+          borderBottom: '1px solid rgba(145, 158, 171, 0.24)'
+        }
+      }
+    },
+    MuiToolbar: {
+      styleOverrides: {
+        root: {
+          minHeight: 64,
+        }
+      }
+    }
   },
 });
 
-// Protected Route Component
+// Protected/Public routes extracted to satisfy Sonar rule
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
-
   if (isLoading) {
     return <LoadingScreen />;
   }
-
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
 };
 
-// Public Route Component (redirect if authenticated)
 const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
-
   if (isLoading) {
     return <LoadingScreen />;
   }
-
-  return !isAuthenticated ? <>{children}</> : <Navigate to="/dashboard" replace />;
+  return !isAuthenticated ? <>{children}</> : <Navigate to="/chat" replace />;
 };
 
 // App Routes Component
@@ -82,7 +148,7 @@ const AppRoutes: React.FC = () => {
         path="/"
         element={
           <PublicRoute>
-            <TenantLogin />
+            <Login />
           </PublicRoute>
         }
       />
@@ -90,7 +156,7 @@ const AppRoutes: React.FC = () => {
         path="/login"
         element={
           <PublicRoute>
-            <TenantLogin />
+            <Login />
           </PublicRoute>
         }
       />
@@ -98,7 +164,7 @@ const AppRoutes: React.FC = () => {
         path="/login/:domain"
         element={
           <PublicRoute>
-            <TenantLogin />
+            <Login />
           </PublicRoute>
         }
       />
@@ -111,9 +177,20 @@ const AppRoutes: React.FC = () => {
         }
       />
 
-      {/* Protected Routes */}
+      {/* Public invite routes */}
+      <Route path="/invite/:inviteToken" element={<Invite />} />
+      <Route path="/organization/invite/:inviteToken" element={<Invite />} />
+      <Route path="/invite/:inviteToken/accept" element={<AcceptInvite />} />
+
+      {/* OAuth Callback Routes */}
+      <Route path="/auth/google/callback" element={<GoogleCallback />} />
+      
+      {/* Test Routes */}
+      <Route path="/oauth-test" element={<OAuthTest />} />
+
+      {/* Protected Routes (root) */}
       <Route
-        path="/dashboard/*"
+        path="/*"
         element={
           <ProtectedRoute>
             <Dashboard />
@@ -133,11 +210,13 @@ const App: React.FC = () => {
     <MsalProvider instance={msalInstance}>
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <AuthProvider>
-          <Router>
-            <AppRoutes />
-          </Router>
-        </AuthProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <Router>
+              <AppRoutes />
+            </Router>
+          </AuthProvider>
+        </ToastProvider>
       </ThemeProvider>
     </MsalProvider>
   );

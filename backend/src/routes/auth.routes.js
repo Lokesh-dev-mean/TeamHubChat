@@ -1,7 +1,7 @@
 const express = require('express');
 const { body } = require('express-validator');
 const authController = require('../controllers/auth.controller');
-const auth = require('../middleware/auth.middleware');
+const { auth } = require('../middleware/auth.middleware');
 
 const router = express.Router();
 
@@ -84,12 +84,7 @@ router.post('/register', [
   body('tenantName')
     .optional()
     .isLength({ min: 1, max: 100 })
-    .withMessage('Organization name must be between 1 and 100 characters'),
-  body('tenantDomain')
-    .optional()
-    .isLength({ min: 1, max: 50 })
-    .matches(/^[a-zA-Z0-9-]+$/)
-    .withMessage('Domain can only contain letters, numbers, and hyphens')
+    .withMessage('Organization name must be between 1 and 100 characters')
 ], authController.register);
 
 /**
@@ -216,12 +211,7 @@ router.post('/google', [
   body('tenantName')
     .optional()
     .isLength({ min: 1, max: 100 })
-    .withMessage('Organization name must be between 1 and 100 characters'),
-  body('tenantDomain')
-    .optional()
-    .isLength({ min: 1, max: 50 })
-    .matches(/^[a-zA-Z0-9-]+$/)
-    .withMessage('Domain can only contain letters, numbers, and hyphens')
+    .withMessage('Organization name must be between 1 and 100 characters')
 ], authController.googleAuth);
 
 /**
@@ -296,19 +286,17 @@ router.post('/microsoft', [
     .optional()
     .isLength({ min: 1, max: 100 })
     .withMessage('Organization name must be between 1 and 100 characters'),
-  body('tenantDomain')
-    .optional()
-    .isLength({ min: 1, max: 50 })
-    .matches(/^[a-zA-Z0-9-]+$/)
-    .withMessage('Domain can only contain letters, numbers, and hyphens')
+
 ], authController.microsoftAuth);
+
+ 
 
 /**
  * @swagger
- * /api/auth/github:
+ * /api/auth/google/exchange:
  *   post:
- *     summary: Authenticate with GitHub OAuth
- *     tags: [Authentication]
+ *     summary: Exchange Google OAuth authorization code for tokens
+ *     tags: [OAuth]
  *     requestBody:
  *       required: true
  *       content:
@@ -316,71 +304,45 @@ router.post('/microsoft', [
  *           schema:
  *             type: object
  *             required:
- *               - accessToken
+ *               - code
  *             properties:
- *               accessToken:
+ *               code:
  *                 type: string
- *                 description: GitHub access token from frontend
- *                 example: gho_16C7e42F292c6912E7710c838347Ae178B4a
- *               tenantName:
- *                 type: string
- *                 minLength: 1
- *                 maxLength: 100
- *                 example: My Organization
- *                 description: Optional - Creates new organization
- *               tenantDomain:
- *                 type: string
- *                 minLength: 1
- *                 maxLength: 50
- *                 pattern: '^[a-zA-Z0-9-]+$'
- *                 example: myorg
- *                 description: Optional - Organization domain
+ *                 description: Google OAuth authorization code
+ *                 example: "4/0AX4XfWjE..."
  *     responses:
  *       200:
- *         description: Login successful (existing user)
+ *         description: Authorization code exchanged successfully
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/AuthResponse'
- *       201:
- *         description: User registered and logged in successfully (new user)
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/AuthResponse'
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Authorization code exchanged successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     accessToken:
+ *                       type: string
+ *                       description: Google access token
+ *                     idToken:
+ *                       type: string
+ *                       description: Google ID token (JWT)
  *       400:
- *         description: Invalid token, domain already exists, or email not public
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- *       401:
- *         description: Invalid GitHub access token
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
+ *         description: Invalid authorization code
  *       500:
  *         description: Server error
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.post('/github', [
-  body('accessToken')
+router.post('/google/exchange', [
+  body('code')
     .notEmpty()
-    .withMessage('GitHub access token is required'),
-  body('tenantName')
-    .optional()
-    .isLength({ min: 1, max: 100 })
-    .withMessage('Organization name must be between 1 and 100 characters'),
-  body('tenantDomain')
-    .optional()
-    .isLength({ min: 1, max: 50 })
-    .matches(/^[a-zA-Z0-9-]+$/)
-    .withMessage('Domain can only contain letters, numbers, and hyphens')
-], authController.githubAuth);
+    .withMessage('Google authorization code is required')
+], authController.googleExchangeCode);
 
 /**
  * @swagger
@@ -530,74 +492,7 @@ router.post('/logout', auth, authController.logout);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.get('/tenant/:domain', authController.discoverTenant);
 
-/**
- * @swagger
- * /api/auth/tenant/{domain}/login:
- *   post:
- *     summary: Login to specific tenant by domain
- *     tags: [Tenant Management]
- *     parameters:
- *       - in: path
- *         name: domain
- *         required: true
- *         schema:
- *           type: string
- *         description: Tenant domain
- *         example: myorg
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - email
- *               - password
- *             properties:
- *               email:
- *                 type: string
- *                 format: email
- *                 example: user@example.com
- *               password:
- *                 type: string
- *                 example: SecurePass123
- *     responses:
- *       200:
- *         description: Login successful
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/AuthResponse'
- *       401:
- *         description: Invalid credentials or user not found in organization
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- *       404:
- *         description: Organization not found
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- *       500:
- *         description: Server error
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- */
-router.post('/tenant/:domain/login', [
-  body('email')
-    .isEmail()
-    .normalizeEmail()
-    .withMessage('Please provide a valid email'),
-  body('password')
-    .notEmpty()
-    .withMessage('Password is required')
-], authController.loginToTenant);
 
 /**
  * @swagger
@@ -800,129 +695,7 @@ router.post('/invitation/:inviteToken/accept', [
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.post('/tenant/:domain/google', [
-  body('token')
-    .notEmpty()
-    .withMessage('Google token is required')
-], authController.googleTenantAuth);
 
-/**
- * @swagger
- * /api/auth/tenant/{domain}/microsoft:
- *   post:
- *     summary: Microsoft OAuth login to specific tenant
- *     tags: [Tenant OAuth]
- *     parameters:
- *       - in: path
- *         name: domain
- *         required: true
- *         schema:
- *           type: string
- *         description: Tenant domain
- *         example: myorg
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - accessToken
- *             properties:
- *               accessToken:
- *                 type: string
- *                 description: Microsoft access token from frontend
- *                 example: EwAoA8l6BAAU7p9QDpi0...
- *     responses:
- *       200:
- *         description: Login successful
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/AuthResponse'
- *       401:
- *         description: User not found in organization or account deactivated
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- *       404:
- *         description: Organization not found
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- *       500:
- *         description: Server error
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- */
-router.post('/tenant/:domain/microsoft', [
-  body('accessToken')
-    .notEmpty()
-    .withMessage('Microsoft access token is required')
-], authController.microsoftTenantAuth);
-
-/**
- * @swagger
- * /api/auth/tenant/{domain}/github:
- *   post:
- *     summary: GitHub OAuth login to specific tenant
- *     tags: [Tenant OAuth]
- *     parameters:
- *       - in: path
- *         name: domain
- *         required: true
- *         schema:
- *           type: string
- *         description: Tenant domain
- *         example: myorg
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - accessToken
- *             properties:
- *               accessToken:
- *                 type: string
- *                 description: GitHub access token from frontend
- *                 example: gho_16C7e42F292c6912E7710c838347Ae178B4a
- *     responses:
- *       200:
- *         description: Login successful
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/AuthResponse'
- *       401:
- *         description: User not found in organization or account deactivated
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- *       404:
- *         description: Organization not found
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- *       500:
- *         description: Server error
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- */
-router.post('/tenant/:domain/github', [
-  body('accessToken')
-    .notEmpty()
-    .withMessage('GitHub access token is required')
-], authController.githubTenantAuth);
 
 // Error handling middleware
 router.use((error, req, res, next) => {

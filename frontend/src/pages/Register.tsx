@@ -9,7 +9,8 @@ const Register = () => {
     password: '',
     confirmPassword: '',
     firstName: '',
-    lastName: ''
+    lastName: '',
+    tenantName: ''
   })
   
   const [passwordError, setPasswordError] = useState('')
@@ -141,6 +142,21 @@ const Register = () => {
               onChange={handleChange}
               required
               minLength={6}
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="tenantName" className="form-label">
+              Organization Name (Optional)
+            </label>
+            <input
+              type="text"
+              id="tenantName"
+              name="tenantName"
+              className="input"
+              value={userData.tenantName}
+              onChange={handleChange}
+              placeholder="Enter your organization name if you want to create one"
             />
           </div>
           

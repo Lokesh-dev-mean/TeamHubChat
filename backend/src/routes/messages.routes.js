@@ -1,7 +1,7 @@
 const express = require('express');
 const { body, param, query } = require('express-validator');
 const router = express.Router();
-const auth = require('../middleware/auth.middleware');
+const { auth } = require('../middleware/auth.middleware');
 const messagesController = require('../controllers/messages.controller');
 
 // Conversation routes

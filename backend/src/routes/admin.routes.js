@@ -1,7 +1,7 @@
 const express = require('express');
-const { body, param, query } = require('express-validator');
+const { body, param, query, validationResult } = require('express-validator');
 const router = express.Router();
-const auth = require('../middleware/auth.middleware');
+const { auth } = require('../middleware/auth.middleware');
 const { requireAdmin, requireAdminOrModerator } = require('../middleware/rbac.middleware');
 const adminController = require('../controllers/admin.controller');
 
@@ -128,7 +128,17 @@ router.get('/users', auth, requireAdminOrModerator, [
     .optional()
     .isString()
     .withMessage('Search must be a string')
-], adminController.getAllUsers);
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      message: 'Validation failed',
+      errors: errors.array()
+    });
+  }
+  next();
+}, adminController.getAllUsers);
 
 /**
  * @swagger

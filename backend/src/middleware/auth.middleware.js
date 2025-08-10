@@ -1,17 +1,19 @@
 const jwt = require('jsonwebtoken');
 const config = require('../config/environment');
 const prisma = require('../utils/prisma');
+const { createError } = require('../utils/errors');
 
+/**
+ * Middleware to authenticate requests using JWT
+ * @returns {Function} Express middleware function
+ */
 const auth = async (req, res, next) => {
   try {
     // Get token from header
     const token = req.header('Authorization')?.replace('Bearer ', '');
 
     if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: 'No token, authorization denied'
-      });
+      throw createError.authentication('No token, authorization denied');
     }
 
     // Verify token
@@ -26,10 +28,11 @@ const auth = async (req, res, next) => {
     });
 
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Token is not valid'
-      });
+      throw createError.authentication('Token is not valid - user not found');
+    }
+
+    if (!user.isActive) {
+      throw createError.authorization('Account is deactivated');
     }
 
     // Add user info to request
@@ -40,18 +43,50 @@ const auth = async (req, res, next) => {
       email: user.email,
       displayName: user.displayName,
       avatarUrl: user.avatarUrl,
+      role: user.role,
       tenantId: user.tenantId,
       tenant: user.tenant
     };
 
     next();
   } catch (error) {
-    console.error('Auth middleware error:', error);
-    res.status(401).json({
-      success: false,
-      message: 'Token is not valid'
-    });
+    if (error.name === 'JsonWebTokenError') {
+      next(createError.authentication('Token is not valid'));
+    } else if (error.name === 'TokenExpiredError') {
+      next(createError.authentication('Token has expired'));
+    } else {
+      next(error);
+    }
   }
 };
 
-module.exports = auth;
+/**
+ * Middleware to validate JWT token
+ * @returns {Function} Express middleware function
+ */
+const validateToken = async (req, res, next) => {
+  try {
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+
+    if (!token) {
+      throw createError.authentication('No token provided');
+    }
+
+    const decoded = jwt.verify(token, config.jwt.secret);
+    res.locals.tokenData = decoded;
+    next();
+  } catch (error) {
+    if (error.name === 'JsonWebTokenError') {
+      next(createError.authentication('Invalid token'));
+    } else if (error.name === 'TokenExpiredError') {
+      next(createError.authentication('Token has expired'));
+    } else {
+      next(error);
+    }
+  }
+};
+
+module.exports = {
+  auth,
+  validateToken,
+};

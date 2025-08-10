@@ -88,6 +88,27 @@ const createConversation = async (req, res) => {
       }
     });
 
+    // Realtime: notify tenant clients to add conversation and join rooms
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.to(tenantId).emit('conversation-created', {
+          conversation: {
+            id: conversation.id,
+            name: conversation.name,
+            isGroup: conversation.isGroup,
+            createdAt: conversation.createdAt,
+            participants: conversation.participants.map(p => ({
+              id: p.user.id,
+              email: p.user.email,
+              displayName: p.user.displayName,
+              avatarUrl: p.user.avatarUrl
+            }))
+          }
+        });
+      }
+    } catch {}
+
     res.status(201).json({
       success: true,
       message: 'Conversation created successfully',
