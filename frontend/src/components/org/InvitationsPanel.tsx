@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Paper, Typography, Box, TextField, Button, Chip, IconButton, Tooltip } from '@mui/material';
+import { TextField, Button, Chip, IconButton, Tooltip } from '@mui/material';
 import { sendInvitation, getInvitations, revokeInvitation } from '../../services/adminService';
 import { toast } from '../../utils/toast';
 import { Delete } from '@mui/icons-material';
@@ -39,28 +39,28 @@ const InvitationsPanel: React.FC = () => {
   };
 
   return (
-    <Paper sx={{ p: 2 }}>
-      <Typography variant="h6" sx={{ mb: 2 }}>Invitations</Typography>
-      <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+    <div className="bg-white p-4 rounded-lg shadow-sm">
+      <h2 className="text-lg font-semibold mb-4">Invitations</h2>
+      <div className="flex gap-2 mb-4">
         <TextField size="small" label="Invite by email" value={email} onChange={(e) => setEmail(e.target.value)} />
         <Button variant="contained" onClick={onInvite} disabled={!email}>Invite</Button>
-      </Box>
+      </div>
       {pending.map((i) => (
-        <Box key={i.inviteToken || i.id} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <div key={i.inviteToken || i.id} className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
             <Chip label={i.email} />
-            <Typography variant="caption" color="text.secondary">Expires: {new Date(i.expiresAt).toLocaleDateString()}</Typography>
-          </Box>
-          <Box>
+            <span className="text-xs text-gray-500">Expires: {new Date(i.expiresAt).toLocaleDateString()}</span>
+          </div>
+          <div>
             <Tooltip title="Revoke">
               <IconButton size="small" onClick={() => onRevoke(i.id)}>
                 <Delete />
               </IconButton>
             </Tooltip>
-          </Box>
-        </Box>
+          </div>
+        </div>
       ))}
-    </Paper>
+    </div>
   );
 };
 

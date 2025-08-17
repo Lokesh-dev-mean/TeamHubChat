@@ -25,20 +25,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       try {
         if (authService.isAuthenticated()) {
           try {
-            const hasMethod = typeof (authService as any).getCurrentUser === 'function';
-            if (hasMethod) {
-              const currentUser = await (authService as any).getCurrentUser();
-              dispatch({ type: 'SET_USER', payload: currentUser });
-            } else {
-              const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-              const token = localStorage.getItem('token');
-              const resp = await fetch(`${apiBase}/auth/me`, {
-                headers: { Authorization: `Bearer ${token}` },
-              });
-              if (!resp.ok) throw new Error(`Failed to load user: ${resp.status}`);
-              const data = await resp.json();
-              dispatch({ type: 'SET_USER', payload: data?.data?.user ?? null });
+            const currentUser = await authService.getCurrentUser();
+            if (!currentUser) {
+              throw new Error('No user data returned');
             }
+            dispatch({ type: 'SET_USER', payload: currentUser });
           } catch (error) {
             console.error('Failed to get current user:', error);
             authService.logout();
@@ -77,7 +68,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
   };
 
-  const withLoading = async <T extends unknown>(
+  const withLoading = async <T,>(
     operation: () => Promise<T>,
     errorMessage: string
   ): Promise<T> => {

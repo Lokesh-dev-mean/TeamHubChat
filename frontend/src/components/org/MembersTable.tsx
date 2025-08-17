@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Paper, Avatar, Typography, Box, TextField, Grid, Card, CardContent, CardActions, CardHeader, Link, Divider, Button, Dialog, DialogContent, Chip, InputAdornment, IconButton, Menu, MenuItem, Autocomplete } from '@mui/material';
+import { Avatar, TextField, Button, Dialog, DialogContent, Chip, InputAdornment, IconButton, Menu, MenuItem, Autocomplete } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import AddRounded from '@mui/icons-material/AddRounded';
 import MoreVert from '@mui/icons-material/MoreVert';
@@ -51,7 +51,7 @@ const MembersTable: React.FC = () => {
     // connect socket for live updates
     try {
       const token = localStorage.getItem('token') || '';
-      const apiBase = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api').replace(/\/api$/, '');
+      const apiBase = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api$/, '');
       const s = createSocket(apiBase, { auth: { token } });
       setSocket(s);
       s.on('connect', () => {
@@ -190,45 +190,68 @@ const MembersTable: React.FC = () => {
   };
 
   return (
-    <Paper sx={{ p: 2 }}>
-      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', rowGap: 1.5, mb: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography variant="h6" sx={{ fontWeight: 700 }}>Members</Typography>
-          <Chip size="small" label={`Total ${totalCount}`} />
-          <Chip size="small" color="success" label={`Active ${activeCount}`} />
-        </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-          <TextField
-            size="small"
-            placeholder="Search members by name or email"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && setSearch(query.trim())}
-            InputProps={{ startAdornment: (<InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>) }}
-            sx={{ minWidth: 360 }}
-          />
-          {/* Status dropdown removed per request */}
-          {baseMembers.length > 0 && (
-            <Button variant="contained" startIcon={<AddRounded />} onClick={() => setInviteOpen(true)} sx={{ borderRadius: 2 }}>Invite members</Button>
-          )}
-        </Box>
-      </Box>
+    <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+      {/* Header Section */}
+      <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-semibold text-gray-900">Members</h2>
+            <div className="flex gap-2">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                {totalCount} total
+              </span>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                {activeCount} active
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <TextField
+              size="small"
+              placeholder="Search members by name or email"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && setSearch(query.trim())}
+              InputProps={{ startAdornment: (<InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>) }}
+              className="min-w-[320px]"
+            />
+            {baseMembers.length > 0 && isAdminOrMod && (
+              <Button 
+                variant="contained" 
+                startIcon={<AddRounded />} 
+                onClick={() => setInviteOpen(true)} 
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-sm"
+              >
+                Invite members
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
 
-      <Grid container spacing={2}>
-        {isAdminOrMod && pending.length > 0 && (
-          <Grid item xs={12}>
-            <Card variant="outlined" sx={{ mb: 1, borderRadius: 2 }}>
-              <CardHeader title={<Typography variant="subtitle1" sx={{ fontWeight: 700 }}>Pending invitations</Typography>} />
-              <CardContent sx={{ pt: 0 }}>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  {pending.map((i) => (
-                    <Box key={i.inviteToken || i.id || i.email} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Avatar sx={{ width: 28, height: 28 }}>{i.email?.[0]?.toUpperCase?.()}</Avatar>
-                      <Typography variant="body2" sx={{ flex: 1 }}>{i.email}</Typography>
+      {/* Content Section with proper scrolling */}
+      <div className="p-6 max-h-[calc(100vh-200px)] overflow-y-auto">
+        <div className="space-y-4">
+          {isAdminOrMod && pending.length > 0 && (
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-2 h-2 bg-amber-500 rounded-full"></div>
+                <h3 className="text-sm font-semibold text-amber-800">Pending Invitations ({pending.length})</h3>
+              </div>
+              <div className="space-y-2">
+                {pending.map((i) => (
+                  <div key={i.inviteToken || i.id || i.email} className="flex items-center gap-3 p-3 bg-white/60 rounded-lg border border-amber-100">
+                    <Avatar sx={{ width: 32, height: 32, bgcolor: '#f59e0b' }}>{i.email?.[0]?.toUpperCase?.()}</Avatar>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{i.email}</p>
                       {i.expiresAt && (
-                        <Typography variant="caption" color="text.secondary">expires {formatRelative(i.expiresAt)}</Typography>
+                        <p className="text-xs text-amber-600">Expires {formatRelative(i.expiresAt)}</p>
                       )}
-                      <Button size="small" color="inherit" onClick={async () => {
+                    </div>
+                    <Button 
+                      size="small" 
+                      variant="outlined"
+                      onClick={async () => {
                         try {
                           if (i.id) { await revokeInvitation(i.id); }
                           setPending((p) => p.filter(x => (x.inviteToken || x.id) !== (i.inviteToken || i.id)));
@@ -236,157 +259,124 @@ const MembersTable: React.FC = () => {
                         } catch (e: any) {
                           toast.error(e.message || 'Failed to revoke');
                         }
-                      }}>Revoke</Button>
-                    </Box>
-                  ))}
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        )}
-        {filtered.map((m) => (
-          <Grid item xs={12} sm={6} md={4} lg={3} key={m.id}>
-            <Card variant="outlined" sx={{
-              p: 0,
-              borderRadius: 3,
-              boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-              transition: 'box-shadow 120ms ease, transform 120ms ease',
-              '&:hover': { boxShadow: '0 8px 22px rgba(0,0,0,0.08)' }
-            }}>
-              <CardHeader
-                avatar={
-                  <Avatar
-                    src={m.avatarUrl}
-                    sx={{
-                      width: 56,
-                      height: 56,
-                      fontWeight: 700,
-                      bgcolor: m.avatarUrl ? undefined : 'transparent',
-                      color: m.avatarUrl ? undefined : '#fff',
-                      background: m.avatarUrl
-                        ? undefined
-                        : 'linear-gradient(135deg, #0B5ED7 0%, #3D8BFF 50%, #10B981 100%)'
-                    }}
-                  >
-                    {m.displayName?.[0]?.toUpperCase()}
-                  </Avatar>
-                }
-                title={<Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{m.displayName}</Typography>}
-                subheader={
-                  <Box>
-                    <Link href={`mailto:${m.email}`} underline="hover" color="inherit" sx={{ fontSize: 12 }}>{m.email}</Link>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Member since {formatMemberSince(m.createdAt)}</Typography>
-                  </Box>
-                }
-                sx={{ pb: 1.5 }}
-              />
-              <CardContent sx={{ pt: 0 }}>
-                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <Box sx={{
-                    display: 'inline-flex', alignItems: 'center', gap: 0.75,
-                    px: 1.25, py: 0.5,
-                    borderRadius: 9999,
-                    backgroundColor: 'rgba(11,94,215,0.10)',
-                    color: 'primary.main',
-                    fontSize: 12, fontWeight: 700,
-                    textTransform: 'capitalize'
-                  }}>
-                    <ShieldOutlined sx={{ fontSize: 16 }} /> {m.role}
-                  </Box>
-                  <Box sx={{
-                    display: 'inline-flex', alignItems: 'center', gap: 0.75,
-                    px: 1.25, py: 0.5,
-                    borderRadius: 9999,
-                    backgroundColor: m.isActive ? 'rgba(34,197,94,0.12)' : 'rgba(145,158,171,0.16)',
-                    color: m.isActive ? 'success.main' : 'text.secondary',
-                    fontSize: 12, fontWeight: 700,
-                  }}>
-                    <CheckCircleOutline sx={{ fontSize: 16 }} /> {m.isActive ? 'Active' : 'Inactive'}
-                  </Box>
-                  <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto', display: 'inline-flex', alignItems: 'center', gap: 0.5 }}><AccessTime sx={{ fontSize: 14 }} /> {formatRelative(m.lastLoginAt)}</Typography>
-                </Box>
-              </CardContent>
-              <Divider />
-              <CardActions sx={{ justifyContent: 'space-between', px: 2 }}>
-                <Box />
-                {isAdminOrMod ? (
-                  <>
-                    <IconButton size="small" onClick={(e) => openMenu(e, m)}><MoreVert /></IconButton>
+                      }}
+                      className="text-amber-700 border-amber-300 hover:bg-amber-50"
+                    >
+                      Revoke
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {filtered.map((m) => (
+            <div key={m.id} className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm hover:shadow-md transition-all duration-200 hover:border-gray-200">
+              <div className="flex items-start gap-4">
+                <Avatar
+                  src={m.avatarUrl}
+                  sx={{
+                    width: 64,
+                    height: 64,
+                    fontWeight: 700,
+                    bgcolor: m.avatarUrl ? undefined : 'transparent',
+                    color: m.avatarUrl ? undefined : '#fff',
+                    background: m.avatarUrl
+                      ? undefined
+                      : 'linear-gradient(135deg, #0B5ED7 0%, #3D8BFF 50%, #10B981 100%)'
+                  }}
+                >
+                  {m.displayName?.[0]?.toUpperCase()}
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-1">{m.displayName}</h3>
+                  <div className="space-y-1">
+                    <a href={`mailto:${m.email}`} className="text-sm text-blue-600 hover:text-blue-800 hover:underline block">{m.email}</a>
+                    <p className="text-xs text-gray-500">Member since {formatMemberSince(m.createdAt)}</p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mt-4 space-y-3">
+                <div className="flex gap-2 items-center flex-wrap">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 text-sm font-medium capitalize">
+                    <ShieldOutlined sx={{ fontSize: 18 }} />
+                    {m.role}
+                  </span>
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${
+                    m.isActive ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-600'
+                  }`}>
+                    <CheckCircleOutline sx={{ fontSize: 18 }} />
+                    {m.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+                
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <AccessTime sx={{ fontSize: 16 }} />
+                  <span>Last active {formatRelative(m.lastLoginAt)}</span>
+                </div>
+              </div>
+              
+              {isAdminOrMod && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <div className="flex justify-end">
+                    <IconButton 
+                      size="small" 
+                      onClick={(e) => openMenu(e, m)}
+                      className="text-gray-400 hover:text-gray-600"
+                    >
+                      <MoreVert />
+                    </IconButton>
                     <Menu anchorEl={menuAnchor} open={menuUser?.id === m.id} onClose={closeMenu} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
                       <MenuItem onClick={() => { closeMenu(); handleToggleActive(m); }}>
                         {m.isActive ? 'Deactivate' : 'Activate'}
                       </MenuItem>
                     </Menu>
-                  </>
-                ) : (
-                  <Typography variant="caption" color="text.secondary">No actions</Typography>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+          
+          {filtered.length === 0 && (
+            <div className="text-center py-12">
+              <div className="max-w-md mx-auto">
+                <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-blue-100 to-purple-100 rounded-full flex items-center justify-center">
+                  <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">No members yet</h3>
+                <p className="text-gray-600 mb-6">
+                  {isAdminOrMod ? 'Invite your team to get started.' : 'No other members in the organization yet.'}
+                </p>
+                {isAdminOrMod && (
+                  <Button
+                    onClick={() => setInviteOpen(true)}
+                    startIcon={<AddRounded />}
+                    size="large"
+                    className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-sm"
+                  >
+                    Invite Member
+                  </Button>
                 )}
-              </CardActions>
-            </Card>
-          </Grid>
-        ))}
-        {filtered.length === 0 && (
-          <Grid item xs={12}>
-            <Box sx={{
-              p: 3,
-              border: '1px solid',
-              borderColor: 'divider',
-              borderRadius: 3,
-              display: 'flex',
-              justifyContent:'center',
-              alignItems: 'center',
-              gap: 3,
-              backgroundColor: 'background.paper',
-              
-            }}>
-              {/* Simple inline illustration */}
-              <Box sx={{ width: 96, height: 96, flex: '0 0 auto' }}>
-                <svg viewBox="0 0 128 128" width="96" height="96" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Invite illustration">
-                  <defs>
-                    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="#3D8BFF" />
-                      <stop offset="100%" stopColor="#6C63FF" />
-                    </linearGradient>
-                  </defs>
-                  <circle cx="60" cy="44" r="20" fill="url(#grad)" />
-                  <rect x="16" y="72" width="96" height="40" rx="12" fill="#E8F0FE" />
-                  <circle cx="60" cy="44" r="8" fill="#FFFFFF" opacity="0.9" />
-                  <path d="M28 84c8-8 56-8 64 0" stroke="#CAD7FB" strokeWidth="6" fill="none" strokeLinecap="round" />
-                </svg>
-              </Box>
-              <Box >
-                <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5 }}>No members yet</Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  Invite your team to get started.
-                </Typography>
-                <Button
-                  onClick={() => setInviteOpen(true)}
-                  startIcon={<AddRounded />}
-                  size="large"
-                  sx={{
-                    borderRadius: 2,
-                    px: 2.5,
-                    color: '#fff',
-                    textTransform: 'none',
-                    background: 'linear-gradient(135deg, #6C63FF 0%, #3D8BFF 100%)',
-                    '&:hover': { background: 'linear-gradient(135deg, #5A54F7 0%, #2D7AF0 100%)' }
-                  }}
-                >
-                  Invite Member
-                </Button>
-              </Box>
-            </Box>
-          </Grid>
-        )}
-      </Grid>
-
-      {/* Removed secondary CTA to avoid duplicate invite buttons */}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Inline invite modal */}
       <Dialog open={inviteOpen} onClose={() => setInviteOpen(false)} maxWidth="sm" fullWidth>
-        <DialogContent sx={{ p: 3 }}>
-          <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Invite teammates</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Type names or emails and press Enter. Use comma or space to create chips.</Typography>
+        <DialogContent className="p-6">
+          <div className="text-center mb-6">
+            <div className="w-16 h-16 mx-auto mb-4 bg-blue-100 rounded-full flex items-center justify-center">
+              <AddRounded className="w-8 h-8 text-blue-600" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">Invite teammates</h3>
+            <p className="text-gray-600">Type names or emails and press Enter. Use comma or space to create chips.</p>
+          </div>
+          
           <Autocomplete
             multiple
             freeSolo
@@ -417,13 +407,27 @@ const MembersTable: React.FC = () => {
               />
             )}
           />
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 2 }}>
-            <Button onClick={() => setInviteOpen(false)} color="inherit">Cancel</Button>
-            <Button onClick={handleBulkInvite} variant="contained" disabled={inviting || emailChips.length === 0}>Send invites</Button>
-          </Box>
+          
+          <div className="flex justify-end gap-3 mt-6">
+            <Button 
+              onClick={() => setInviteOpen(false)} 
+              variant="outlined"
+              className="px-6 py-2"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleBulkInvite} 
+              variant="contained" 
+              disabled={inviting || emailChips.length === 0}
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-700"
+            >
+              {inviting ? 'Sending...' : 'Send invites'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
-    </Paper>
+    </div>
   );
 };
 

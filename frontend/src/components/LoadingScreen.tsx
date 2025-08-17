@@ -1,24 +1,14 @@
 import React from 'react';
-import { Box, CircularProgress, Typography } from '@mui/material';
+import { CircularProgress } from '@mui/material';
 
 const LoadingScreen: React.FC = () => {
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        backgroundColor: 'background.default',
-        gap: 2,
-      }}
-    >
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 gap-4">
       <CircularProgress size={40} />
-      <Typography variant="body1" color="text.secondary">
+      <p className="text-gray-600">
         Loading TeamHub...
-      </Typography>
-    </Box>
+      </p>
+    </div>
   );
 };
 

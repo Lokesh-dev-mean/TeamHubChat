@@ -1,4 +1,4 @@
-const prisma = require('../utils/prisma');
+const { prisma } = require('../utils/prisma');
 const { validationResult } = require('express-validator');
 
 /**
@@ -41,10 +41,6 @@ const globalSearch = async (req, res) => {
     // Search Messages
     if (type === 'all' || type === 'messages') {
       const messageWhereClause = {
-        messageText: {
-          contains: searchTerm,
-          mode: 'insensitive'
-        },
         deletedAt: null,
         conversation: {
           participants: {
@@ -52,6 +48,19 @@ const globalSearch = async (req, res) => {
           },
           tenantId
         }
+      };
+
+      // Use tsvector search if available
+      if (messageWhereClause.messageVector) {
+        messageWhereClause.messageVector = {
+          search: searchTerm.split(' ').join(' & ')
+        };
+      } else {
+        // Fallback to basic text search
+        messageWhereClause.messageText = {
+          contains: searchTerm,
+          mode: 'insensitive'
+        };
       };
 
       // Add date filter if provided
@@ -257,10 +266,20 @@ const searchMessages = async (req, res) => {
 
     // Add text search if provided
     if (query && query.trim().length >= 2) {
-      whereClause.messageText = {
-        contains: query.trim(),
-        mode: 'insensitive'
-      };
+      const searchTerm = query.trim();
+      
+      // Use tsvector search if available
+      if (whereClause.messageVector) {
+        whereClause.messageVector = {
+          search: searchTerm.split(' ').join(' & ')
+        };
+      } else {
+        // Fallback to basic text search
+        whereClause.messageText = {
+          contains: searchTerm,
+          mode: 'insensitive'
+        };
+      }
     }
 
     // Filter by conversation

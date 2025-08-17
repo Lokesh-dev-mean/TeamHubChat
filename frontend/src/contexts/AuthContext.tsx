@@ -55,7 +55,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               const currentUser = await (authService as any).getCurrentUser();
               setUser(currentUser);
             } else {
-              const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+              const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
               const token = localStorage.getItem('token');
               const resp = await fetch(`${apiBase}/auth/me`, {
                 headers: { Authorization: `Bearer ${token}` },

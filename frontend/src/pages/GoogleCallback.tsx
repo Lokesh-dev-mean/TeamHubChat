@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Box, CircularProgress, Typography } from '@mui/material';
+import { CircularProgress } from '@mui/material';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { OAuthState, OAuthTenantData } from '../types/auth';
@@ -135,21 +135,17 @@ const GoogleCallback: React.FC = () => {
   }, [searchParams, navigate, googleAuth]);
 
   return (
-    <Box
-      display="flex"
-      flexDirection="column"
-      alignItems="center"
-      justifyContent="center"
-      minHeight="100vh"
-    >
-      <CircularProgress size={40} sx={{ mb: 2 }} />
-      <Typography variant="h6" gutterBottom>
+    <div className="flex flex-col items-center justify-center min-h-screen">
+      <div className="mb-4">
+        <CircularProgress size={40} />
+      </div>
+      <h2 className="text-xl font-semibold mb-2">
         Completing Google Authentication
-      </Typography>
-      <Typography variant="body2" color="text.secondary">
+      </h2>
+      <p className="text-gray-600">
         Please wait while we process your login...
-      </Typography>
-    </Box>
+      </p>
+    </div>
   );
 };
 

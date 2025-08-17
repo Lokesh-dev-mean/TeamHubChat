@@ -8,200 +8,330 @@ datasource db {
 }
 
 model Tenant {
-  id        String   @id @default(uuid())
-  name      String
-  createdAt DateTime @default(now())
-  users     User[]
-  connections TenantConnection[] @relation("TenantConnections")
-  connectedTo TenantConnection[] @relation("ConnectedTenants")
-  auditLogs AuditLog[]
-  media     MediaFile[]
+  id            String             @id @default(uuid())
+  name          String
+  createdAt     DateTime           @default(now())
+  domain        String?            @unique
+  slug          String             @unique
+  auditLogs     AuditLog[]
   conversations Conversation[]
-  invitations Invitation[]
-  settings  TenantSettings?
+  invitations   Invitation[]
+  media         MediaFile[]
+  rateLimitLogs RateLimitLog[]
+  connectedTo   TenantConnection[] @relation("ConnectedTenants")
+  connections   TenantConnection[] @relation("TenantConnections")
+  settings      TenantSettings?
+  users         User[]
+
+  @@index([domain])
+  @@index([slug])
 }
 
 model TenantConnection {
   id                String   @id @default(uuid())
-  tenant           Tenant   @relation("TenantConnections", fields: [tenantId], references: [id])
-  tenantId         String
-  connectedTenant  Tenant   @relation("ConnectedTenants", fields: [connectedTenantId], references: [id])
+  tenantId          String
   connectedTenantId String
-  status           String   @default("approved")
-  createdAt        DateTime @default(now())
+  status            String   @default("approved")
+  createdAt         DateTime @default(now())
+  initiatedBy       String
+  connectedTenant   Tenant   @relation("ConnectedTenants", fields: [connectedTenantId], references: [id])
+  tenant            Tenant   @relation("TenantConnections", fields: [tenantId], references: [id])
 }
 
 model User {
-  id           String   @id @default(uuid())
-  tenant       Tenant   @relation(fields: [tenantId], references: [id])
-  tenantId     String
-  email        String   @unique
-  passwordHash String
-  displayName  String
-  avatarUrl    String?
-  role         String   @default("member") // admin, moderator, member, guest
-  permissions  String @default("[]") // JSON array of permission strings
-  isActive     Boolean  @default(true)
-  lastLoginAt  DateTime?
-  createdAt    DateTime @default(now())
-  conversationsCreated Conversation[] @relation("CreatedBy")
-  messages     Message[]
+  id                       String                    @id @default(uuid())
+  tenantId                 String
+  email                    String                    @unique
+  passwordHash             String
+  displayName              String
+  avatarUrl                String?
+  role                     String                    @default("member")
+  permissions              String                    @default("[]")
+  isActive                 Boolean                   @default(true)
+  lastLoginAt              DateTime?
+  createdAt                DateTime                  @default(now())
+  deletedAt                DateTime?
+  lastSeenAt               DateTime?
+  onlineStatus             String                    @default("offline")
+  phoneNumber              String?
+  auditLogs                AuditLog[]
+  conversationsCreated     Conversation[]            @relation("CreatedBy")
   conversationParticipants ConversationParticipant[]
-  reactions    MessageReaction[]
-  typingStates TypingIndicator[]
-  mediaFiles   MediaFile[]
-  auditLogs    AuditLog[]
-  frequentConversations FrequentConversation[]
-  roleAssignments UserRole[]
-  invitations  Invitation[]
+  frequentConversations    FrequentConversation[]
+  invitations              Invitation[]
+  mediaFiles               MediaFile[]
+  messages                 Message[]
+  reactions                MessageReaction[]
+  messageReads             MessageRead[]
+  rateLimitLogs            RateLimitLog[]
+  typingStates             TypingIndicator[]
+  tenant                   Tenant                    @relation(fields: [tenantId], references: [id])
+  roleAssignments          UserRole[]
+
+  @@index([tenantId, email])
+  @@index([lastSeenAt])
 }
 
 model Conversation {
-  id           String   @id @default(uuid())
-  tenant       Tenant   @relation(fields: [tenantId], references: [id])
-  tenantId     String
-  name         String
-  isGroup      Boolean  @default(false)
-  crossTenant  Boolean  @default(false)
-  createdBy    User     @relation("CreatedBy", fields: [createdById], references: [id])
-  createdById  String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  deletedAt    DateTime?
-  participants ConversationParticipant[]
-  messages     Message[]
+  id                    String                    @id @default(uuid())
+  tenantId              String
+  name                  String
+  isGroup               Boolean                   @default(false)
+  crossTenant           Boolean                   @default(false)
+  createdById           String
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+  deletedAt             DateTime?
+  description           String?
+  topic                 String?
+  createdBy             User                      @relation("CreatedBy", fields: [createdById], references: [id])
+  tenant                Tenant                    @relation(fields: [tenantId], references: [id])
+  participants          ConversationParticipant[]
   frequentConversations FrequentConversation[]
-  typingIndicators TypingIndicator[]
+  messages              Message[]
+  typingIndicators      TypingIndicator[]
+
+  @@index([tenantId, name])
+  @@index([createdAt])
 }
 
 model ConversationParticipant {
-  id             String        @id @default(uuid())
-  conversation   Conversation  @relation(fields: [conversationId], references: [id])
+  id             String       @id @default(uuid())
   conversationId String
-  user           User          @relation(fields: [userId], references: [id])
   userId         String
-  joinedAt       DateTime      @default(now())
+  joinedAt       DateTime     @default(now())
+  deletedAt      DateTime?
+  role           String       @default("member")
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  user           User         @relation(fields: [userId], references: [id])
+
+  @@index([conversationId, userId])
 }
 
 model Message {
-  id              String        @id @default(uuid())
-  conversation    Conversation  @relation(fields: [conversationId], references: [id])
-  conversationId  String
-  sender          User          @relation(fields: [senderId], references: [id])
-  senderId        String
-  messageText     String?
-  fileUrl         String?
-  messageType     String        @default("text") // "text", "file"
-  edited          Boolean       @default(false)
-  editedAt        DateTime?
-  createdAt       DateTime      @default(now())
-  deletedAt       DateTime?
-  reactions       MessageReaction[]
+  id             String                   @id @default(uuid())
+  conversationId String
+  senderId       String
+  messageText    String?
+  messageType    String                   @default("text")
+  edited         Boolean                  @default(false)
+  editedAt       DateTime?
+  createdAt      DateTime                 @default(now())
+  deletedAt      DateTime?
+  parentId       String?
+  threadId       String?
+  messageVector  Unsupported("tsvector")?
+  conversation   Conversation             @relation(fields: [conversationId], references: [id])
+  parent         Message?                 @relation("ParentChild", fields: [parentId], references: [id])
+  childMessages  Message[]                @relation("ParentChild")
+  sender         User                     @relation(fields: [senderId], references: [id])
+  thread         Message?                 @relation("ThreadMessages", fields: [threadId], references: [id])
+  threadMessages Message[]                @relation("ThreadMessages")
+  mediaFiles     MessageMediaFile[]
+  reactions      MessageReaction[]
+  readBy         MessageRead[]
+
+  @@index([conversationId, createdAt])
+  @@index([threadId])
+  @@index([messageVector], type: Gin)
+}
+
+model MessageRead {
+  id        String   @id @default(uuid())
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([messageId, userId])
+  @@index([messageId])
+  @@index([userId])
 }
 
 model MessageReaction {
   id        String   @id @default(uuid())
-  message   Message  @relation(fields: [messageId], references: [id])
   messageId String
-  user      User     @relation(fields: [userId], references: [id])
   userId    String
   emoji     String
   createdAt DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([messageId, userId])
+}
+
+model MessageMediaFile {
+  id          String    @id @default(uuid())
+  messageId   String
+  mediaFileId String
+  createdAt   DateTime  @default(now())
+  mediaFile   MediaFile @relation(fields: [mediaFileId], references: [id])
+  message     Message   @relation(fields: [messageId], references: [id])
+
+  @@unique([messageId, mediaFileId])
 }
 
 model TypingIndicator {
-  id             String        @id @default(uuid())
-  conversation   Conversation  @relation(fields: [conversationId], references: [id])
+  id             String       @id @default(uuid())
   conversationId String
-  user           User          @relation(fields: [userId], references: [id])
   userId         String
-  isTyping       Boolean       @default(false)
-  updatedAt      DateTime      @default(now())
+  isTyping       Boolean      @default(false)
+  updatedAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  user           User         @relation(fields: [userId], references: [id])
+
+  @@index([conversationId])
+  @@index([userId])
 }
 
 model FrequentConversation {
-  id              String        @id @default(uuid())
-  user            User          @relation(fields: [userId], references: [id])
-  userId          String
-  conversation    Conversation  @relation(fields: [conversationId], references: [id])
-  conversationId  String
-  accessCount     Int           @default(0)
-  lastAccessed    DateTime      @default(now())
+  id             String       @id @default(uuid())
+  userId         String
+  conversationId String
+  accessCount    Int          @default(0)
+  lastAccessed   DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  user           User         @relation(fields: [userId], references: [id])
+
+  @@unique([userId, conversationId])
+  @@index([userId, accessCount])
 }
 
 model MediaFile {
-  id          String   @id @default(uuid())
-  uploadedBy  User     @relation(fields: [uploadedById], references: [id])
+  id           String             @id @default(uuid())
   uploadedById String
-  tenant      Tenant   @relation(fields: [tenantId], references: [id])
-  tenantId    String
-  fileUrl     String
-  fileType    String
-  size        BigInt
-  uploadedAt  DateTime @default(now())
+  tenantId     String
+  fileUrl      String
+  fileType     String
+  size         BigInt
+  uploadedAt   DateTime           @default(now())
+  deletedAt    DateTime?
+  duration     Int?
+  height       Int?
+  metadata     String?
+  width        Int?
+  tenant       Tenant             @relation(fields: [tenantId], references: [id])
+  uploadedBy   User               @relation(fields: [uploadedById], references: [id])
+  messages     MessageMediaFile[]
+
+  @@index([tenantId])
+  @@index([uploadedAt])
+  @@index([uploadedById, uploadedAt])
 }
 
 model AuditLog {
-  id         String   @id @default(uuid())
-  tenant     Tenant   @relation(fields: [tenantId], references: [id])
-  tenantId   String
-  user       User?    @relation(fields: [userId], references: [id])
-  userId     String?
-  action     String
-  targetId   String
-  context    String?
-  createdAt  DateTime @default(now())
+  id        String   @id @default(uuid())
+  tenantId  String
+  userId    String?
+  action    String
+  targetId  String
+  context   String?
+  createdAt DateTime @default(now())
+  ipAddress String?
+  userAgent String?
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([userId, createdAt])
 }
 
 model Role {
-  id          String     @id @default(uuid())
-  name        String     @unique
+  id          String           @id @default(uuid())
+  name        String           @unique
   description String?
-  permissions String @default("[]") // JSON array
-  isDefault   Boolean    @default(false)
-  createdAt   DateTime   @default(now())
+  isDefault   Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  permissions RolePermission[]
   userRoles   UserRole[]
 }
 
+model Permission {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  description String?
+  createdAt   DateTime         @default(now())
+  deletedAt   DateTime?
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime   @default(now())
+  permission   Permission @relation(fields: [permissionId], references: [id])
+  role         Role       @relation(fields: [roleId], references: [id])
+
+  @@unique([roleId, permissionId])
+}
+
 model UserRole {
-  id       String   @id @default(uuid())
-  user     User     @relation(fields: [userId], references: [id])
-  userId   String
-  role     Role     @relation(fields: [roleId], references: [id])
-  roleId   String
+  id         String   @id @default(uuid())
+  userId     String
+  roleId     String
   assignedAt DateTime @default(now())
   assignedBy String?
-  
-  @@unique([userId, roleId])
+  tenantId   String
+  role       Role     @relation(fields: [roleId], references: [id])
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, roleId, tenantId])
+  @@index([userId])
+  @@index([roleId])
 }
 
 model Invitation {
-  id           String    @id @default(uuid())
-  tenant       Tenant    @relation(fields: [tenantId], references: [id])
-  tenantId     String
-  email        String
-  role         String    @default("member")
-  permissions  String @default("[]") // JSON array
-  inviteToken  String    @unique
-  invitedBy    User      @relation(fields: [invitedById], references: [id])
-  invitedById  String
-  status       String    @default("pending") // pending, accepted, expired, revoked
-  expiresAt    DateTime
-  acceptedAt   DateTime?
-  createdAt    DateTime  @default(now())
-  
+  id          String    @id @default(uuid())
+  tenantId    String
+  email       String
+  role        String    @default("member")
+  permissions String    @default("[]")
+  inviteToken String    @unique
+  invitedById String
+  status      String    @default("pending")
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime? @updatedAt
+  invitedBy   User      @relation(fields: [invitedById], references: [id])
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+
   @@unique([tenantId, email])
+  @@index([inviteToken])
 }
 
 model TenantSettings {
   id                    String   @id @default(uuid())
-  tenant               Tenant   @relation(fields: [tenantId], references: [id])
-  tenantId             String   @unique
-  allowGuestAccess     Boolean  @default(false)
+  tenantId              String   @unique
+  allowGuestAccess      Boolean  @default(false)
   requireInviteApproval Boolean  @default(true)
-  maxFileSize          BigInt   @default(52428800) // 50MB in bytes
-  allowedFileTypes     String @default("[\"image/jpeg\", \"image/png\", \"application/pdf\"]") // JSON array of MIME types
-  messageRetentionDays Int?     // null means forever
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  maxFileSize           BigInt   @default(52428800)
+  allowedFileTypes      String   @default("[\"image/jpeg\", \"image/png\", \"application/pdf\"]")
+  messageRetentionDays  Int?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  tenant                Tenant   @relation(fields: [tenantId], references: [id])
+}
+
+model RateLimitLog {
+  id        String   @id @default(uuid())
+  tenantId  String
+  userId    String?
+  endpoint  String
+  method    String
+  ipAddress String
+  userAgent String?
+  timestamp DateTime @default(now())
+  resetAt   DateTime
+  limit     Int
+  current   Int
+  ttl       Int
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, timestamp])
+  @@index([userId, timestamp])
+  @@index([ipAddress, timestamp])
 }

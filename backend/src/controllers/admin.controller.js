@@ -1,4 +1,4 @@
-const prisma = require('../utils/prisma');
+const { prisma } = require('../utils/prisma');
 const { validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
@@ -21,7 +21,8 @@ const getDashboardStats = async (req, res) => {
       totalConversations,
       totalMessages,
       totalFiles,
-      storageUsed
+      storageUsed,
+      rateLimitHits
     ] = await Promise.all([
       prisma.user.count({ where: { tenantId } }),
       prisma.user.count({ 
@@ -44,6 +45,14 @@ const getDashboardStats = async (req, res) => {
       prisma.mediaFile.aggregate({
         where: { tenantId },
         _sum: { size: true }
+      }),
+      prisma.rateLimitLog.count({
+        where: {
+          tenantId,
+          createdAt: {
+            gte: new Date(Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
+          }
+        }
       })
     ]);
 
@@ -89,7 +98,8 @@ const getDashboardStats = async (req, res) => {
           totalConversations,
           totalMessages,
           totalFiles,
-          storageUsed: storageUsed._sum.size ? storageUsed._sum.size.toString() : '0'
+          storageUsed: storageUsed._sum.size ? storageUsed._sum.size.toString() : '0',
+          rateLimitHits24h: rateLimitHits
         },
         recentActivity,
         userGrowth
@@ -403,15 +413,30 @@ const sendInvitation = async (req, res) => {
       where: {
         email,
         tenantId,
-        status: 'pending'
+        OR: [
+          { status: 'pending' },
+          { 
+            status: 'revoked',
+            updatedAt: {
+              gte: new Date(Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
+            }
+          }
+        ]
       }
     });
 
     if (existingInvitation) {
-      return res.status(400).json({
-        success: false,
-        message: 'Pending invitation already exists for this email'
-      });
+      if (existingInvitation.status === 'pending') {
+        return res.status(400).json({
+          success: false,
+          message: 'A pending invitation already exists for this email'
+        });
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'This email was recently invited. Please wait 24 hours before sending another invitation.'
+        });
+      }
     }
 
     // Generate invitation token
@@ -424,9 +449,7 @@ const sendInvitation = async (req, res) => {
         tenantId,
         email,
         role,
-        permissions: Array.isArray(permissions)
-          ? JSON.stringify(permissions)
-          : (typeof permissions === 'string' ? permissions : '[]'),
+        permissions: Array.isArray(permissions) ? JSON.stringify(permissions) : '[]',
         inviteToken,
         invitedById: userId,
         expiresAt
@@ -496,7 +519,7 @@ const sendInvitation = async (req, res) => {
           id: invitation.id,
           email: invitation.email,
           role: invitation.role,
-          permissions: (() => { try { return JSON.parse(invitation.permissions); } catch { return []; } })(),
+          permissions: JSON.parse(invitation.permissions || '[]'),
           inviteToken: invitation.inviteToken,
           expiresAt: invitation.expiresAt,
           inviteUrl: `${config.frontend.url}/invite/${invitation.inviteToken}`
@@ -504,12 +527,19 @@ const sendInvitation = async (req, res) => {
       }
     });
 
-  } catch (error) {
+      } catch (error) {
     console.error('Send invitation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while sending invitation'
-    });
+    if (error.code === 'P2002') {
+      res.status(400).json({
+        success: false,
+        message: 'An invitation already exists for this email in your organization'
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: 'Server error while sending invitation'
+      });
+    }
   }
 };
 
@@ -707,6 +737,124 @@ const getAuditLogs = async (req, res) => {
   }
 };
 
+/**
+ * Get rate limiting logs
+ * @route GET /api/admin/rate-limits
+ * @access Admin
+ */
+const getRateLimitLogs = async (req, res) => {
+  try {
+    const { tenantId } = req;
+    const { 
+      page = 1, 
+      limit = 50, 
+      endpoint, 
+      userId, 
+      ipAddress,
+      startDate, 
+      endDate 
+    } = req.query;
+
+    const skip = (page - 1) * limit;
+    const whereClause = { tenantId };
+
+    // Filter by endpoint
+    if (endpoint) {
+      whereClause.endpoint = endpoint;
+    }
+
+    // Filter by user
+    if (userId) {
+      whereClause.userId = userId;
+    }
+
+    // Filter by IP address
+    if (ipAddress) {
+      whereClause.ipAddress = ipAddress;
+    }
+
+    // Filter by date range
+    if (startDate || endDate) {
+      whereClause.timestamp = {};
+      if (startDate) {
+        whereClause.timestamp.gte = new Date(startDate);
+      }
+      if (endDate) {
+        whereClause.timestamp.lte = new Date(endDate);
+      }
+    }
+
+    const rateLimitLogs = await prisma.rateLimitLog.findMany({
+      where: whereClause,
+      include: {
+        user: {
+          select: {
+            id: true,
+            displayName: true,
+            email: true
+          }
+        }
+      },
+      orderBy: { timestamp: 'desc' },
+      skip,
+      take: parseInt(limit)
+    });
+
+    const totalLogs = await prisma.rateLimitLog.count({ where: whereClause });
+
+    // Get endpoint statistics
+    const endpointStats = await prisma.rateLimitLog.groupBy({
+      by: ['endpoint'],
+      where: whereClause,
+      _count: true,
+      orderBy: {
+        _count: {
+          endpoint: 'desc'
+        }
+      },
+      take: 5
+    });
+
+    // Get IP address statistics
+    const ipStats = await prisma.rateLimitLog.groupBy({
+      by: ['ipAddress'],
+      where: whereClause,
+      _count: true,
+      orderBy: {
+        _count: {
+          ipAddress: 'desc'
+        }
+      },
+      take: 5
+    });
+
+    res.json({
+      success: true,
+      data: {
+        rateLimitLogs,
+        stats: {
+          endpointStats,
+          ipStats
+        },
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: totalLogs,
+          totalPages: Math.ceil(totalLogs / limit),
+          hasMore: skip + rateLimitLogs.length < totalLogs
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get rate limit logs error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching rate limit logs'
+    });
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getAllUsers,
@@ -715,5 +863,6 @@ module.exports = {
   sendInvitation,
   getInvitations,
   revokeInvitation,
-  getAuditLogs
+  getAuditLogs,
+  getRateLimitLogs
 };

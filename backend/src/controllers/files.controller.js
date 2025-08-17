@@ -1,4 +1,4 @@
-const prisma = require('../utils/prisma');
+const { prisma } = require('../utils/prisma');
 const { generateSignedUrl, deleteFile, getFileInfo } = require('../config/storage');
 const path = require('path');
 const fs = require('fs').promises;
@@ -27,6 +27,18 @@ const uploadFiles = async (req, res) => {
       const fileKey = path.relative(path.join(process.cwd(), 'uploads'), file.path);
       const fileSize = file.size;
 
+      // Extract media metadata if available
+      let metadata = {};
+      if (file.mimetype.startsWith('video/') || file.mimetype.startsWith('audio/')) {
+        // TODO: Use ffprobe or similar to get duration
+        metadata.duration = null;
+      }
+      if (file.mimetype.startsWith('image/')) {
+        // TODO: Use sharp or similar to get dimensions
+        metadata.width = null;
+        metadata.height = null;
+      }
+
       // Save file metadata to database
       const mediaFile = await prisma.mediaFile.create({
         data: {
@@ -34,7 +46,11 @@ const uploadFiles = async (req, res) => {
           tenantId,
           fileUrl: fileKey,
           fileType: file.mimetype,
-          size: BigInt(fileSize)
+          size: BigInt(fileSize),
+          duration: metadata.duration,
+          width: metadata.width,
+          height: metadata.height,
+          metadata: JSON.stringify(metadata)
         }
       });
 
@@ -326,7 +342,16 @@ const getFileDetails = async (req, res) => {
       ...mediaFile,
       size: mediaFile.size.toString(), // Convert BigInt to string
       downloadUrl: await generateSignedUrl(mediaFile.fileUrl),
-      storageInfo: fileInfo
+      storageInfo: fileInfo,
+      metadata: mediaFile.metadata ? JSON.parse(mediaFile.metadata) : {},
+      dimensions: mediaFile.width && mediaFile.height ? {
+        width: mediaFile.width,
+        height: mediaFile.height
+      } : null,
+      duration: mediaFile.duration ? {
+        seconds: mediaFile.duration,
+        formatted: `${Math.floor(mediaFile.duration / 60)}:${(mediaFile.duration % 60).toString().padStart(2, '0')}`
+      } : null
     };
 
     res.json({

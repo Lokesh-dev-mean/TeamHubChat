@@ -1,90 +1,30 @@
-# ===========================================
-# TeamHub Frontend - Git Ignore Configuration
-# ===========================================
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# ===========================================
-# SECURITY - NEVER COMMIT THESE!
-# ===========================================
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
 # Environment variables
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
-.env.backup
 
-# OAuth configuration (keep examples)
-oauth-config.json
-*-oauth-config.json
-
-# ===========================================
-# DEPENDENCIES
-# ===========================================
-# Node.js
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-# Package manager
-.pnpm-store/
-.yarn-integrity
-package-lock.json.backup
-
-# ===========================================
-# BUILD OUTPUT
-# ===========================================
-# Vite build output
-dist/
-build/
-.output/
-
-# Vite cache and temp files
-.vite/
-vite.config.*.timestamp-*
-
-# ===========================================
-# DEVELOPMENT
-# ===========================================
-# Hot reload and cache
-.cache/
-.parcel-cache/
-.eslintcache
-.stylelintcache
-
-# TypeScript
-*.tsbuildinfo
-.tsbuildinfo
-
-# ===========================================
-# TESTING
-# ===========================================
-# Test coverage
-coverage/
-*.lcov
-.nyc_output/
-test-results/
-junit.xml
-
-# Screenshot tests
-screenshots/
-visual-regression/
-
-# ===========================================
-# IDE & EDITORS
-# ===========================================
+# IDE and editor files
 .vscode/
-!.vscode/settings.json.example
 .idea/
 *.swp
 *.swo
 *~
 
-# ===========================================
-# OS FILES
-# ===========================================
+# OS generated files
 .DS_Store
 .DS_Store?
 ._*
@@ -92,88 +32,68 @@ visual-regression/
 .Trashes
 ehthumbs.db
 Thumbs.db
-Desktop.ini
 
-# ===========================================
-# LOGS
-# ===========================================
+# Logs
 logs/
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-lerna-debug.log*
-.pnpm-debug.log*
 
-# ===========================================
-# RUNTIME & TEMP FILES
-# ===========================================
-*.tmp
-*.temp
-.temp/
-.local/
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
 
-# ===========================================
-# STORYBOOK
-# ===========================================
-storybook-static/
-.storybook/public/
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
 
-# ===========================================
-# PWA
-# ===========================================
-# Service worker cache
-sw.js
-workbox-*.js
-precache-manifest.*.js
+# nyc test coverage
+.nyc_output
 
-# ===========================================
-# ANALYTICS & MONITORING
-# ===========================================
-# Bundle analysis
-bundle-analyzer-report.html
-stats.json
-.bundlewatch.json
+# Dependency directories
+jspm_packages/
 
-# ===========================================
-# BACKUP FILES
-# ===========================================
-*.backup
-*.bak
-*.old
-*.orig
+# Optional npm cache directory
+.npm
 
-# ===========================================
-# TEAMHUB FRONTEND SPECIFIC
-# ===========================================
-# OAuth test pages
-oauth-test.html
-test-oauth*.html
-auth-test*.html
+# Optional eslint cache
+.eslintcache
 
-# Local configuration
-src/config/local.ts
-src/config/development.local.ts
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
 
-# Component playground
-src/playground/
-playground/
+# Optional REPL history
+.node_repl_history
 
-# Design system exports
-design-tokens.json
-theme.local.json
+# Output of 'npm pack'
+*.tgz
 
-# ===========================================
-# STATIC ASSETS (Conditionally ignore)
-# ===========================================
-# Large media files (uncomment if needed)
-# public/videos/
-# public/images/large/
-# *.mp4
-# *.mov
-# *.avi
+# Yarn Integrity file
+.yarn-integrity
 
-# Generated favicons (keep source)
-public/favicon-*.png
-public/apple-touch-icon-*.png
-public/android-chrome-*.png
+# parcel-bundler cache (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# Next.js build output
+.next
+
+# Nuxt.js build / generate output
+.nuxt
+
+# Storybook build outputs
+.out
+.storybook-out
+
+# Temporary folders
+tmp/
+temp/
+
+# Local Netlify folder
+.netlify
+
+# Vite
+.vite/

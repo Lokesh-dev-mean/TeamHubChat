@@ -1,185 +1,367 @@
-import React,{ useState } from 'react'
-import { Link } from 'react-router-dom'
-import { useAuthStore } from '../stores/authStore' 
+import React, { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import {
+  TextField,
+  Button,
+  CircularProgress,
+  InputAdornment,
+  IconButton,
+} from '@mui/material';
+import {
+  Visibility,
+  VisibilityOff,
+  Business as BusinessIcon,
+  Person as PersonIcon,
+  Email as EmailIcon,
+  Lock as LockIcon,
+} from '@mui/icons-material';
+import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
+import GoogleOAuthButtonDirect from '../components/GoogleOAuthButtonDirect';
+import MicrosoftOAuthButton from '../components/MicrosoftOAuthButton';
 
-const Register = () => {
-  const [userData, setUserData] = useState({
-    username: '',
+const Register: React.FC = () => {
+  const navigate = useNavigate();
+  const { register, completeGoogleRegistration, microsoftAuth, isLoading, error, clearError } = useAuth();
+  const toast = useToast();
+
+  const [formData, setFormData] = useState({
     email: '',
     password: '',
     confirmPassword: '',
-    firstName: '',
-    lastName: '',
-    tenantName: ''
-  })
-  
-  const [passwordError, setPasswordError] = useState('')
-  const { register, error, loading } = useAuthStore()
+    displayName: '',
+    tenantName: '',
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target
-    setUserData(prev => ({
-      ...prev,
-      [name]: value
-    }))
-    
-    // Clear password error when user types
-    if ((name === 'password' || name === 'confirmPassword') && passwordError) {
-      setPasswordError('')
-    }
-  }
+  });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  const validateForm = () => {
+    const errors: Record<string, string> = {};
+
+    if (!formData.email) {
+      errors.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      errors.email = 'Please enter a valid email';
+    }
+
+    if (!formData.password) {
+      errors.password = 'Password is required';
+    } else if (formData.password.length < 6) {
+      errors.password = 'Password must be at least 6 characters';
+    } else if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(formData.password)) {
+      errors.password = 'Password must contain at least one uppercase letter, lowercase letter, and number';
+    }
+
+    if (!formData.confirmPassword) {
+      errors.confirmPassword = 'Please confirm your password';
+    } else if (formData.password !== formData.confirmPassword) {
+      errors.confirmPassword = 'Passwords do not match';
+    }
+
+    if (!formData.displayName) {
+      errors.displayName = 'Display name is required';
+    }
+
+    if (!formData.tenantName) {
+      errors.tenantName = 'Organization name is required';
+    }
+
+
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleInputChange = (field: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = event.target.value;
+    setFormData(prev => ({ ...prev, [field]: value }));
     
-    if (userData.password !== userData.confirmPassword) {
-      setPasswordError('Passwords do not match')
-      return
+    // Clear field error when user starts typing
+    if (formErrors[field]) {
+      setFormErrors(prev => ({ ...prev, [field]: '' }));
     }
     
-    const { confirmPassword, ...registerData } = userData
-    await register(registerData)
-  }
+    // Clear global error
+    if (error) {
+      clearError();
+    }
+
+
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    
+    if (!validateForm()) {
+      return;
+    }
+
+    try {
+      await register(
+        formData.email,
+        formData.password,
+        formData.displayName,
+        formData.tenantName
+      );
+      toast.success('Organization created successfully');
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Registration failed:', error);
+      const msg = (error instanceof Error && error.message) || 'Registration failed';
+      toast.error(msg);
+    }
+  };
+
+  const handleGoogleSuccess = async (_token: string) => {
+    // Not used in redirect flow
+  };
+
+  const handleGoogleError = (error: string) => {
+    console.error('Google OAuth error:', error);
+  };
+
+  const handleMicrosoftSuccess = async (accessToken: string) => {
+    try {
+      await microsoftAuth(accessToken, formData.tenantName);
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Microsoft OAuth failed:', error);
+      // Error is handled by context
+    }
+  };
+
+  const handleMicrosoftError = (error: string) => {
+    console.error('Microsoft OAuth error:', error);
+  };
+
+
+
+  const isOAuthReady = formData.tenantName && !formErrors.tenantName;
 
   return (
-    <div className="flex justify-center items-center min-h-screen bg-gray-100">
-      <div className="bg-white p-8 rounded shadow-md w-full max-w-md">
-        <h1 className="text-2xl font-bold mb-6 text-center">Register for TeamHub</h1>
-        
-        {(error || passwordError) && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-            {error || passwordError}
-          </div>
-        )}
-        
-        <form onSubmit={handleSubmit}>
-          <div className="flex space-x-4">
-            <div className="form-group w-1/2">
-              <label htmlFor="firstName" className="form-label">
-                First Name
-              </label>
-              <input
-                type="text"
-                id="firstName"
-                name="firstName"
-                className="input"
-                value={userData.firstName}
-                onChange={handleChange}
-              />
-            </div>
-            
-            <div className="form-group w-1/2">
-              <label htmlFor="lastName" className="form-label">
-                Last Name
-              </label>
-              <input
-                type="text"
-                id="lastName"
-                name="lastName"
-                className="input"
-                value={userData.lastName}
-                onChange={handleChange}
-              />
-            </div>
-          </div>
-          
-          <div className="form-group">
-            <label htmlFor="username" className="form-label">
-              Username*
-            </label>
-            <input
-              type="text"
-              id="username"
-              name="username"
-              className="input"
-              value={userData.username}
-              onChange={handleChange}
-              required
-            />
-          </div>
-          
-          <div className="form-group">
-            <label htmlFor="email" className="form-label">
-              Email*
-            </label>
-            <input
-              type="email"
-              id="email"
-              name="email"
-              className="input"
-              value={userData.email}
-              onChange={handleChange}
-              required
-            />
-          </div>
-          
-          <div className="form-group">
-            <label htmlFor="password" className="form-label">
-              Password*
-            </label>
-            <input
-              type="password"
-              id="password"
-              name="password"
-              className="input"
-              value={userData.password}
-              onChange={handleChange}
-              required
-              minLength={6}
-            />
-          </div>
-          
-          <div className="form-group">
-            <label htmlFor="confirmPassword" className="form-label">
-              Confirm Password*
-            </label>
-            <input
-              type="password"
-              id="confirmPassword"
-              name="confirmPassword"
-              className="input"
-              value={userData.confirmPassword}
-              onChange={handleChange}
-              required
-              minLength={6}
-            />
+    <div className="container mx-auto max-w-md">
+      <div className="min-h-screen flex items-center py-8">
+        <div className="w-full bg-white rounded-lg shadow-lg p-8">
+          <div className="text-center mb-8">
+            <BusinessIcon className="text-4xl text-primary mb-2" />
+            <h1 className="text-xl font-bold mb-2">
+              Create Your Organization
+            </h1>
+            <p className="text-sm text-gray-600">
+              Set up your TeamHub workspace and become the admin
+            </p>
           </div>
 
-          <div className="form-group">
-            <label htmlFor="tenantName" className="form-label">
-              Organization Name (Optional)
-            </label>
-            <input
-              type="text"
-              id="tenantName"
-              name="tenantName"
-              className="input"
-              value={userData.tenantName}
-              onChange={handleChange}
-              placeholder="Enter your organization name if you want to create one"
+          {/* Inline error removed; errors are shown via global toasts */}
+
+          <form onSubmit={handleSubmit}>
+            {/* Organization Information */}
+            <h2 className="text-lg font-semibold my-4">
+              Organization Details
+            </h2>
+            
+            <TextField
+              fullWidth
+              label="Organization Name"
+              value={formData.tenantName}
+              onChange={handleInputChange('tenantName')}
+              error={!!formErrors.tenantName}
+              helperText={formErrors.tenantName}
+              margin="normal"
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <BusinessIcon />
+                  </InputAdornment>
+                ),
+              }}
             />
+
+            {/* Admin User Information */}
+            <h2 className="text-lg font-semibold mt-6 mb-4">
+              Admin Account Details
+            </h2>
+
+            <TextField
+              fullWidth
+              label="Your Full Name"
+              value={formData.displayName}
+              onChange={handleInputChange('displayName')}
+              error={!!formErrors.displayName}
+              helperText={formErrors.displayName}
+              margin="normal"
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <PersonIcon />
+                  </InputAdornment>
+                ),
+              }}
+            />
+
+            <TextField
+              fullWidth
+              type="email"
+              label="Email Address"
+              value={formData.email}
+              onChange={handleInputChange('email')}
+              error={!!formErrors.email}
+              helperText={formErrors.email}
+              margin="normal"
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <EmailIcon />
+                  </InputAdornment>
+                ),
+              }}
+            />
+
+            <TextField
+              fullWidth
+              type={showPassword ? 'text' : 'password'}
+              label="Password"
+              value={formData.password}
+              onChange={handleInputChange('password')}
+              error={!!formErrors.password}
+              helperText={formErrors.password}
+              margin="normal"
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <LockIcon />
+                  </InputAdornment>
+                ),
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowPassword(!showPassword)}
+                      edge="end"
+                    >
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+
+            <TextField
+              fullWidth
+              type={showConfirmPassword ? 'text' : 'password'}
+              label="Confirm Password"
+              value={formData.confirmPassword}
+              onChange={handleInputChange('confirmPassword')}
+              error={!!formErrors.confirmPassword}
+              helperText={formErrors.confirmPassword}
+              margin="normal"
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <LockIcon />
+                  </InputAdornment>
+                ),
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      edge="end"
+                    >
+                      {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+
+            <Button
+              type="submit"
+              fullWidth
+              variant="contained"
+              size="large"
+              disabled={isLoading}
+              sx={{ mt: 3, mb: 2, py: 1 }}
+            >
+              {isLoading ? <CircularProgress size={24} /> : 'Create Organization'}
+            </Button>
+          </form>
+
+          {/* Guidance when redirected from OAuth due to missing account */}
+          {sessionStorage.getItem('oauth_register_reason') === 'no_account' && (() => { sessionStorage.removeItem('oauth_register_reason'); toast.info('No account found for OAuth login. Please register your organization.'); return null; })()}
+
+          <div className="relative flex items-center justify-center my-8">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-300"></div>
+            </div>
+            <div className="relative px-4 text-sm text-gray-500 bg-white">
+              or create with
+            </div>
           </div>
-          
-          <button 
-            type="submit" 
-            className="btn btn-primary w-full"
-            disabled={loading}
-          >
-            {loading ? 'Creating account...' : 'Register'}
-          </button>
-        </form>
-        
-        <div className="mt-4 text-center">
-          <p>
-            Already have an account?{' '}
-            <Link to="/" className="text-blue-600 hover:underline">
-              Login
-            </Link>
-          </p>
+
+          <div className="flex flex-col gap-4">
+            <GoogleOAuthButtonDirect
+              onSuccess={handleGoogleSuccess}
+              onError={handleGoogleError}
+              text="Create with Google"
+              disabled={!isOAuthReady || isLoading}
+              tenantName={formData.tenantName}
+            />
+            
+            <MicrosoftOAuthButton
+              onSuccess={handleMicrosoftSuccess}
+              onError={handleMicrosoftError}
+              text="Create with Microsoft"
+              disabled={!isOAuthReady || isLoading}
+            />
+
+
+          </div>
+
+          {/* Removed extra inline guidance per UX feedback */}
+
+          {/* Continue registration if we have a pending Google token */}
+          {sessionStorage.getItem('pending_google_id_token') && (
+            <div className="mt-4">
+              <p className="text-sm text-gray-600 mb-2">
+                Continue registration with your Google account by providing your organization name.
+              </p>
+              <Button
+                fullWidth
+                variant="contained"
+                disabled={isLoading || !formData.tenantName}
+                onClick={async () => {
+                  const idToken = sessionStorage.getItem('pending_google_id_token');
+                  if (!idToken) return;
+                  try {
+                    await completeGoogleRegistration(idToken, formData.tenantName);
+                    toast.success('Registration completed');
+                    navigate('/dashboard');
+                  } catch (e) {
+                    const msg = (e instanceof Error && e.message) || 'Registration failed';
+                    toast.error(msg);
+                  }
+                }}
+              >
+                Complete Registration
+              </Button>
+            </div>
+          )}
+
+          <div className="text-center mt-6">
+            <p className="text-sm">
+              Already have an organization?{' '}
+              <Link to="/login" className="text-inherit no-underline">
+                <strong>Sign in here</strong>
+              </Link>
+            </p>
+          </div>
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default Register
+export default Register;
+

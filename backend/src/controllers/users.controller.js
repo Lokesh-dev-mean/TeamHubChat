@@ -1,5 +1,5 @@
-const User = require('../models/user.model');
 const { validationResult } = require('express-validator');
+const { prisma } = require('../utils/prisma');
 
 /**
  * Get all users
@@ -8,21 +8,92 @@ const { validationResult } = require('express-validator');
  */
 exports.getAllUsers = async (req, res) => {
   try {
-    const users = await User.find()
-      .select('-password')
-      .sort({ username: 1 });
-    
-    res.status(200).json({
+    const { tenantId } = req;
+    const { search, role, isActive, page = 1, limit = 20 } = req.query;
+
+    const skip = (page - 1) * limit;
+    const whereClause = {
+      tenantId,
+      deletedAt: null
+    };
+
+    // Filter by role
+    if (role) {
+      whereClause.role = role;
+    }
+
+    // Filter by active status
+    if (isActive !== undefined) {
+      whereClause.isActive = isActive === 'true';
+    }
+
+    // Search by name or email
+    if (search && search.trim().length > 0) {
+      const searchTerm = search.trim();
+      whereClause.OR = [
+        {
+          displayName: {
+            contains: searchTerm,
+            mode: 'insensitive'
+          }
+        },
+        {
+          email: {
+            contains: searchTerm,
+            mode: 'insensitive'
+          }
+        }
+      ];
+    }
+
+    const [users, totalUsers] = await Promise.all([
+      prisma.user.findMany({
+        where: whereClause,
+        select: {
+          id: true,
+          email: true,
+          displayName: true,
+          avatarUrl: true,
+          role: true,
+          permissions: true,
+          isActive: true,
+          lastLoginAt: true,
+          lastSeenAt: true,
+          onlineStatus: true,
+          createdAt: true,
+          _count: {
+            select: {
+              messages: true,
+              mediaFiles: true,
+              conversationsCreated: true
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: parseInt(limit)
+      }),
+      prisma.user.count({ where: whereClause })
+    ]);
+
+    res.json({
       success: true,
-      count: users.length,
-      users
+      data: {
+        users,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: totalUsers,
+          totalPages: Math.ceil(totalUsers / limit),
+          hasMore: skip + users.length < totalUsers
+        }
+      }
     });
   } catch (error) {
     console.error('Get all users error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error while fetching users',
-      error: error.message
+      message: 'Server error while fetching users'
     });
   }
 };
@@ -34,34 +105,81 @@ exports.getAllUsers = async (req, res) => {
  */
 exports.getUserById = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select('-password');
-    
+    const { id } = req.params;
+    const { tenantId } = req;
+
+    const user = await prisma.user.findFirst({
+      where: {
+        id,
+        tenantId,
+        deletedAt: null
+      },
+      select: {
+        id: true,
+        email: true,
+        displayName: true,
+        avatarUrl: true,
+        role: true,
+        permissions: true,
+        isActive: true,
+        lastLoginAt: true,
+        lastSeenAt: true,
+        onlineStatus: true,
+        phoneNumber: true,
+        createdAt: true,
+        tenant: {
+          select: {
+            id: true,
+            name: true,
+            domain: true,
+            slug: true
+          }
+        },
+        roleAssignments: {
+          select: {
+            role: {
+              select: {
+                name: true,
+                permissions: {
+                  select: {
+                    permission: {
+                      select: {
+                        name: true,
+                        description: true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        _count: {
+          select: {
+            messages: true,
+            mediaFiles: true,
+            conversationsCreated: true
+          }
+        }
+      }
+    });
+
     if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
       });
     }
-    
-    res.status(200).json({
+
+    res.json({
       success: true,
-      user
+      data: { user }
     });
   } catch (error) {
     console.error('Get user by ID error:', error);
-    
-    // Check if error is a CastError (invalid ID format)
-    if (error.kind === 'ObjectId') {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid user ID'
-      });
-    }
-    
     res.status(500).json({
       success: false,
-      message: 'Server error while fetching user',
-      error: error.message
+      message: 'Server error while fetching user'
     });
   }
 };
@@ -73,86 +191,110 @@ exports.getUserById = async (req, res) => {
  */
 exports.updateUser = async (req, res) => {
   try {
-    // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
         success: false,
+        message: 'Validation failed',
         errors: errors.array()
       });
     }
-    
-    // Check if user is trying to update their own profile or is an admin
-    if (req.user._id.toString() !== req.params.id && req.user.role !== 'admin') {
+
+    const { id } = req.params;
+    const { userId, tenantId } = req;
+    const { displayName, email, avatarUrl, phoneNumber } = req.body;
+
+    // Check if user exists and belongs to the same tenant
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        id,
+        tenantId,
+        deletedAt: null
+      }
+    });
+
+    if (!existingUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if user is updating their own profile or is an admin
+    if (userId !== id && req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to update this user'
       });
     }
-    
-    const { username, email, firstName, lastName, profilePicture } = req.body;
-    
-    // Build update object with only provided fields
-    const updateFields = {};
-    if (username) updateFields.username = username;
-    if (email) updateFields.email = email;
-    if (firstName) updateFields.firstName = firstName;
-    if (lastName) updateFields.lastName = lastName;
-    if (profilePicture) updateFields.profilePicture = profilePicture;
-    
-    // Check if username or email already exists if they are being updated
-    if (username) {
-      const existingUsername = await User.findOne({ 
-        username, 
-        _id: { $ne: req.params.id } 
+
+    // Check if email is being updated and is unique
+    if (email && email !== existingUser.email) {
+      const emailExists = await prisma.user.findFirst({
+        where: {
+          email,
+          tenantId,
+          id: { not: id },
+          deletedAt: null
+        }
       });
-      
-      if (existingUsername) {
-        return res.status(400).json({
-          success: false,
-          message: 'Username already taken'
-        });
-      }
-    }
-    
-    if (email) {
-      const existingEmail = await User.findOne({ 
-        email, 
-        _id: { $ne: req.params.id } 
-      });
-      
-      if (existingEmail) {
+
+      if (emailExists) {
         return res.status(400).json({
           success: false,
           message: 'Email already registered'
         });
       }
     }
-    
+
+    // Build update object with only provided fields
+    const updateData = {};
+    if (displayName) updateData.displayName = displayName;
+    if (email) updateData.email = email;
+    if (avatarUrl) updateData.avatarUrl = avatarUrl;
+    if (phoneNumber) updateData.phoneNumber = phoneNumber;
+
     // Update user
-    const updatedUser = await User.findByIdAndUpdate(
-      req.params.id,
-      { $set: updateFields },
-      { new: true }
-    ).select('-password');
-    
-    if (!updatedUser) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-    
-    res.status(200).json({
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: updateData,
+      select: {
+        id: true,
+        email: true,
+        displayName: true,
+        avatarUrl: true,
+        role: true,
+        permissions: true,
+        isActive: true,
+        lastLoginAt: true,
+        lastSeenAt: true,
+        onlineStatus: true,
+        phoneNumber: true,
+        createdAt: true
+      }
+    });
+
+    // Create audit log
+    await prisma.auditLog.create({
+      data: {
+        tenantId,
+        userId,
+        action: 'USER_UPDATED',
+        targetId: id,
+        context: `User profile updated: ${Object.keys(updateData).join(', ')}`
+      }
+    });
+
+    res.json({
       success: true,
-      user: updatedUser
+      message: 'User updated successfully',
+      data: { user: updatedUser }
     });
   } catch (error) {
     console.error('Update user error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error while updating user',
-      error: error.message
+      message: 'Server error while updating user'
     });
   }
 };
@@ -164,55 +306,89 @@ exports.updateUser = async (req, res) => {
  */
 exports.updateUserStatus = async (req, res) => {
   try {
-    // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
         success: false,
+        message: 'Validation failed',
         errors: errors.array()
       });
     }
-    
-    // Check if user is trying to update their own status
-    if (req.user._id.toString() !== req.params.id) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to update this status'
-      });
-    }
-    
-    const { status } = req.body;
-    
-    if (!['online', 'offline', 'away', 'busy'].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid status'
-      });
-    }
-    
-    const updatedUser = await User.findByIdAndUpdate(
-      req.params.id,
-      { status },
-      { new: true }
-    ).select('-password');
-    
-    if (!updatedUser) {
+
+    const { id } = req.params;
+    const { userId, tenantId } = req;
+    const { onlineStatus } = req.body;
+
+    // Check if user exists and belongs to the same tenant
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        id,
+        tenantId,
+        deletedAt: null
+      }
+    });
+
+    if (!existingUser) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
       });
     }
-    
-    res.status(200).json({
+
+    // Check if user is updating their own status
+    if (userId !== id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to update this status'
+      });
+    }
+
+    if (!['online', 'offline', 'away', 'busy'].includes(onlineStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status'
+      });
+    }
+
+    // Update user status
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: {
+        onlineStatus,
+        lastSeenAt: new Date()
+      },
+      select: {
+        id: true,
+        displayName: true,
+        onlineStatus: true,
+        lastSeenAt: true
+      }
+    });
+
+    // Emit real-time status update
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.to(tenantId).emit('user-status-changed', {
+          userId: id,
+          onlineStatus,
+          lastSeenAt: updatedUser.lastSeenAt
+        });
+      }
+    } catch (error) {
+      console.error('Failed to emit status change:', error);
+    }
+
+    res.json({
       success: true,
-      user: updatedUser
+      message: 'Status updated successfully',
+      data: { user: updatedUser }
     });
   } catch (error) {
     console.error('Update user status error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error while updating status',
-      error: error.message
+      message: 'Server error while updating status'
     });
   }
 };
@@ -224,26 +400,76 @@ exports.updateUserStatus = async (req, res) => {
  */
 exports.deleteUser = async (req, res) => {
   try {
-    // Check if user is an admin or deleting their own account
-    if (req.user._id.toString() !== req.params.id && req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to delete this user'
-      });
-    }
-    
-    const user = await User.findById(req.params.id);
-    
-    if (!user) {
+    const { id } = req.params;
+    const { userId, tenantId } = req;
+
+    // Check if user exists and belongs to the same tenant
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        id,
+        tenantId,
+        deletedAt: null
+      }
+    });
+
+    if (!existingUser) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
       });
     }
-    
-    await User.findByIdAndDelete(req.params.id);
-    
-    res.status(200).json({
+
+    // Check if user is an admin or deleting their own account
+    if (userId !== id && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to delete this user'
+      });
+    }
+
+    // Don't allow admins to delete themselves
+    if (userId === id && req.user.role === 'admin') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete your own admin account'
+      });
+    }
+
+    // Soft delete user
+    await prisma.user.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        isActive: false,
+        onlineStatus: 'offline'
+      }
+    });
+
+    // Create audit log
+    await prisma.auditLog.create({
+      data: {
+        tenantId,
+        userId: req.user.id,
+        action: 'USER_DELETED',
+        targetId: id,
+        context: `User ${existingUser.email} deleted`
+      }
+    });
+
+    // Emit real-time user deletion
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.to(tenantId).emit('user-deleted', {
+          userId: id,
+          email: existingUser.email
+        });
+      }
+    } catch (error) {
+      console.error('Failed to emit user deletion:', error);
+    }
+
+    res.json({
       success: true,
       message: 'User deleted successfully'
     });
@@ -251,8 +477,7 @@ exports.deleteUser = async (req, res) => {
     console.error('Delete user error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error while deleting user',
-      error: error.message
+      message: 'Server error while deleting user'
     });
   }
 };

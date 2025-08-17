@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@types/quill": "^2.0.14",
+    "react-quill": "^2.0.0"
+  }
+}

@@ -1,8 +1,20 @@
 /// <reference types="vite/client" />
-import axios from 'axios';
+import axios, { AxiosResponse } from 'axios';
 import { PublicClientApplication } from '@azure/msal-browser';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+interface ApiError extends Error {
+  response?: {
+    data?: {
+      message?: string;
+      error?: {
+        message?: string;
+      };
+    };
+    status?: number;
+  };
+}
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 // Types
 export interface User {
@@ -128,14 +140,19 @@ class AuthService {
           this.logout();
         }
         const serverMessage = error.response?.data?.message || error.response?.data?.error?.message;
+        const errorMessage = serverMessage || error.message || 'API request failed';
+        
         // Auto-toast error messages
         try {
-          const msg = serverMessage || error.message || 'API request failed';
           import('../utils/toast')
-            .then(({ toast }) => toast.error(msg))
+            .then(({ toast }) => toast.error(errorMessage))
             .catch(() => {});
         } catch {}
-        return Promise.reject(new Error(serverMessage || error.message || 'API request failed'));
+
+        // Create error with proper message and response data
+        const enhancedError = new Error(errorMessage) as ApiError;
+        enhancedError.response = error.response;
+        return Promise.reject(enhancedError);
       }
     );
   }
@@ -367,17 +384,73 @@ class AuthService {
 
   // Get Current User
   async getCurrentUser(): Promise<User> {
-    const response = await this.apiClient.get('/auth/me');
-    return response.data.data.user;
+    try {
+      const response = await this.apiClient.get('/auth/me');
+      if (!response.data?.success || !response.data?.data?.user) {
+        throw new Error('Failed to get current user');
+      }
+      return response.data.data.user;
+    } catch (error) {
+      const apiError = error as ApiError;
+      // If the error is from our API, it will have response data
+      if (apiError.response?.data) {
+        throw new Error(apiError.response.data.message || 'Failed to get current user');
+      }
+      // Otherwise, it's a network or other error
+      throw error;
+    }
+  }
+
+  // Extract user ID from JWT token
+  private getUserIdFromToken(token: string): string | null {
+    try {
+      // JWT tokens are in format: header.payload.signature
+      const payload = token.split('.')[1];
+      if (!payload) return null;
+      
+      // Decode base64 payload
+      const decodedPayload = JSON.parse(atob(payload));
+      return decodedPayload.userId || null;
+    } catch (error) {
+      console.error('Error extracting userId from token:', error);
+      return null;
+    }
   }
 
   // Logout
   async logoutUser(): Promise<void> {
     try {
-      await this.apiClient.post('/auth/logout');
+      // Add timeout to prevent hanging
+      const logoutPromise = this.apiClient.post('/auth/logout');
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Logout timeout')), 5000); // 5 second timeout
+      });
+      
+      await Promise.race([logoutPromise, timeoutPromise]);
+      console.log('✅ Backend logout successful');
     } catch (error) {
       console.error('Logout API call failed:', error);
+      
+      // If it's a timeout, try to update user status directly
+      if (error.message === 'Logout timeout') {
+        try {
+          // Try to update user status to offline using the userStatusService
+          const { userStatusService } = await import('./userStatusService');
+          const token = this.getToken();
+          if (token) {
+            // Extract userId from token (you might need to implement this)
+            const userId = this.getUserIdFromToken(token);
+            if (userId) {
+              await userStatusService.updateUserStatus(userId, 'offline');
+              console.log('✅ User status updated to offline after logout timeout');
+            }
+          }
+        } catch (statusError) {
+          console.error('Failed to update user status after logout timeout:', statusError);
+        }
+      }
     } finally {
+      // Always call local logout regardless of backend success
       this.logout();
     }
   }

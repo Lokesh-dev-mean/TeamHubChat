@@ -1,58 +1,35 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Box, Container, Typography, Button, Paper } from '@mui/material';
+import { Button } from '@mui/material';
 import { Home as HomeIcon } from '@mui/icons-material';
 
 const NotFound: React.FC = () => {
   return (
-    <Container maxWidth="sm">
-      <Box
-        sx={{
-          minHeight: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Paper
-          elevation={3}
-          sx={{
-            p: 6,
-            textAlign: 'center',
-            borderRadius: 2,
-          }}
-        >
-          <Typography
-            variant="h1"
-            component="h1"
-            sx={{
-              fontSize: '6rem',
-              fontWeight: 'bold',
-              color: 'primary.main',
-              mb: 2,
-            }}
-          >
+    <div className="container mx-auto max-w-lg">
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="bg-white p-12 text-center rounded-lg shadow-lg">
+          <h1 className="text-8xl font-bold text-primary mb-4">
             404
-          </Typography>
-          <Typography variant="h4" component="h2" gutterBottom>
+          </h1>
+          <h2 className="text-3xl font-semibold mb-2">
             Page Not Found
-          </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
+          </h2>
+          <p className="text-gray-600 mb-8">
             The page you're looking for doesn't exist or has been moved.
-          </Typography>
+          </p>
           <Button
             component={Link}
             to="/"
             variant="contained"
             size="large"
             startIcon={<HomeIcon />}
-            sx={{ px: 4, py: 1.5 }}
+            className="px-8 py-3"
           >
             Go to Home
           </Button>
-        </Paper>
-      </Box>
-    </Container>
+        </div>
+      </div>
+    </div>
   );
 };
 

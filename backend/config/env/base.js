@@ -10,7 +10,7 @@ module.exports = {
   server: {
     host: process.env.HOST || '0.0.0.0',
     port: parseInt(process.env.PORT) || 5000,
-    corsOrigins: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000'],
+    corsOrigins: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:5173', 'http://127.0.0.1:5173'],
   },
 
   jwt: {
@@ -88,4 +88,6 @@ module.exports = {
     },
   },
 };
+
+
 

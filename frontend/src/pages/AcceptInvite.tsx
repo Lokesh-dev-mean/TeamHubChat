@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Box, Button, CircularProgress, Paper, TextField, Typography } from '@mui/material';
+import { Button, CircularProgress, TextField } from '@mui/material';
 import { authService } from '../services/authService';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const AcceptInvite: React.FC = () => {
   const { inviteToken } = useParams<{ inviteToken: string }>();
@@ -71,53 +71,57 @@ const AcceptInvite: React.FC = () => {
   };
 
   return (
-    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', p: 2 }}>
-      <Paper sx={{ maxWidth: 520, width: '100%', p: 4 }} elevation={2}>
-        <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
+    <div className="flex justify-center items-center min-h-screen p-4">
+      <div className="bg-white rounded-lg shadow-lg p-8 max-w-lg w-full">
+        <h1 className="text-xl font-bold mb-2">
           Join {tenantName}
-        </Typography>
+        </h1>
         {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+          <div className="flex justify-center py-12">
             <CircularProgress size={24} />
-          </Box>
+          </div>
         ) : error ? (
-          <Typography color="error" sx={{ mt: 1 }}>{error}</Typography>
+          <>
+            <p className="text-red-600 mt-2 mb-4">{error}</p>
+            <Button variant="outlined" onClick={() => navigate('/login')} fullWidth>
+              Return to Login
+            </Button>
+          </>
         ) : (
           <form onSubmit={onSubmit}>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            <p className="text-gray-600 mb-4">
               Creating an account for <strong>{email}</strong>
-            </Typography>
-            <TextField
-              label="Display name"
-              fullWidth
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              sx={{ mb: 2 }}
-            />
-            <TextField
-              label="Password"
-              type="password"
-              fullWidth
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              helperText="Minimum 8 characters"
-              sx={{ mb: 2 }}
-            />
-            <TextField
-              label="Confirm password"
-              type="password"
-              fullWidth
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              sx={{ mb: 2 }}
-            />
-            <Button type="submit" variant="contained" disabled={submitting}>
-              {submitting ? 'Joining…' : 'Join organization'}
-            </Button>
+            </p>
+            <div className="space-y-4">
+              <TextField
+                label="Display name"
+                fullWidth
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+              />
+              <TextField
+                label="Password"
+                type="password"
+                fullWidth
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                helperText="Minimum 8 characters"
+              />
+              <TextField
+                label="Confirm password"
+                type="password"
+                fullWidth
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+              />
+              <Button type="submit" variant="contained" disabled={submitting} fullWidth>
+                {submitting ? 'Joining…' : 'Join organization'}
+              </Button>
+            </div>
           </form>
         )}
-      </Paper>
-    </Box>
+      </div>
+    </div>
   );
 };
 

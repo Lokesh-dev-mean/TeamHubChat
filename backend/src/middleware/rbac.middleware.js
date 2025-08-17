@@ -1,4 +1,4 @@
-const prisma = require('../utils/prisma');
+const { prisma } = require('../utils/prisma');
 const { createError } = require('../utils/errors');
 
 // Define default permissions for each role

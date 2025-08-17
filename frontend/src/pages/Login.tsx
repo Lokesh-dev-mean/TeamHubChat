@@ -1,13 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
-  Box,
-  Container,
-  Paper,
-  Typography,
   TextField,
   Button,
-  Divider,
   Alert,
   CircularProgress,
   InputAdornment,
@@ -135,24 +130,24 @@ const Login: React.FC = () => {
   };
 
   return (
-    <Container maxWidth="xs">
-      <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', py: 6 }}>
-        <Paper elevation={0} sx={{ p: 4, width: '100%', borderRadius: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, justifyContent: 'center', mb: 2 }}>
+    <div className="container mx-auto max-w-sm">
+      <div className="min-h-screen flex items-center justify-center py-12">
+        <div className="bg-white p-8 w-full rounded-lg shadow-sm">
+          <div className="flex items-center gap-3 justify-center mb-4">
             <BrandLogo size={32} />
-            <Typography variant="h6" sx={{ fontWeight: 700 }}>TeamHub</Typography>
-          </Box>
-          <Typography variant="body2" align="center" sx={{ mb: 3, color: 'text.secondary' }}>
+            <h1 className="text-xl font-bold">TeamHub</h1>
+          </div>
+          <p className="text-sm text-gray-600 text-center mb-6">
             Log in to continue
-          </Typography>
+          </p>
 
           {error && (
-            <Alert severity="error" sx={{ mb: 3 }}>
+            <Alert severity="error" className="mb-6">
               {error}
             </Alert>
           )}
 
-          <Box component="form" onSubmit={handleSubmit} noValidate>
+          <form onSubmit={handleSubmit} noValidate>
             <TextField
               fullWidth
               label="Email Address"
@@ -208,7 +203,7 @@ const Login: React.FC = () => {
               variant="contained"
               size="large"
               disabled={isLoading}
-              sx={{ mt: 3, mb: 2, py: 1 }}
+              className="mt-6 mb-4 py-3"
             >
               {isLoading ? (
                 <CircularProgress size={24} color="inherit" />
@@ -216,11 +211,18 @@ const Login: React.FC = () => {
                 'Sign In'
               )}
             </Button>
-          </Box>
+          </form>
 
-          <Divider sx={{ my: 3 }}><Typography variant="caption" color="text.secondary">Or continue with</Typography></Divider>
+          <div className="relative flex items-center justify-center my-8">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-300"></div>
+            </div>
+            <div className="relative px-4 text-sm text-gray-500 bg-white">
+              Or continue with
+            </div>
+          </div>
 
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <div className="flex flex-col gap-4">
             <GoogleOAuthButtonDirect
               onSuccess={handleGoogleSuccess}
               onError={handleGoogleError}
@@ -234,19 +236,19 @@ const Login: React.FC = () => {
               text="Sign in with Microsoft"
               disabled={isLoading}
             />
-          </Box>
+          </div>
 
-          <Box sx={{ textAlign: 'center', mt: 3 }}>
-            <Typography variant="body2">
+          <div className="text-center mt-6">
+            <p className="text-sm">
               Don't have an organization?{' '}
-              <Link to="/register" style={{ textDecoration: 'none', color: 'inherit' }}>
+              <Link to="/register" className="text-inherit no-underline">
                 <strong>Create one here</strong>
               </Link>
-            </Typography>
-          </Box>
-        </Paper>
-      </Box>
-    </Container>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 

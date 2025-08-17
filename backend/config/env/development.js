@@ -8,7 +8,7 @@ module.exports = {
   
   server: {
     ...base.server,
-    port: parseInt(process.env.PORT) || 3000, // Change to 3000 to match frontend
+    port: parseInt(process.env.PORT) || 5000, // Use port 5000 for development
     cors: {
       origin: '*', // Allow all origins in development
     },

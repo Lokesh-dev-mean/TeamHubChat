@@ -1,4 +1,5 @@
-const prisma = require('../utils/prisma');
+const { prisma } = require('../utils/prisma');
+const { Prisma } = require('@prisma/client');
 const { validationResult } = require('express-validator');
 
 /**
@@ -34,6 +35,53 @@ const createConversation = async (req, res) => {
         success: false,
         message: 'One or more participants not found or not accessible'
       });
+    }
+
+    // For direct messages (non-group), check if conversation already exists
+    if (!isGroup && participantIds.length === 1) {
+      const existingConversation = await prisma.conversation.findFirst({
+        where: {
+          isGroup: false,
+          participants: {
+            every: {
+              userId: {
+                in: [userId, participantIds[0]]
+              }
+            }
+          },
+          deletedAt: null
+        },
+        include: {
+          participants: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  email: true,
+                  displayName: true,
+                  avatarUrl: true
+                }
+              }
+            }
+          },
+          createdBy: {
+            select: {
+              id: true,
+              email: true,
+              displayName: true,
+              avatarUrl: true
+            }
+          }
+        }
+      });
+
+      if (existingConversation) {
+        return res.json({
+          success: true,
+          message: 'Existing conversation found',
+          data: { conversation: existingConversation }
+        });
+      }
     }
 
     // Create conversation
@@ -151,12 +199,17 @@ const getConversations = async (req, res) => {
                 id: true,
                 email: true,
                 displayName: true,
-                avatarUrl: true
+                avatarUrl: true,
+                onlineStatus: true,
+                lastSeenAt: true
               }
             }
           }
         },
         messages: {
+          where: {
+            deletedAt: null
+          },
           take: 1,
           orderBy: { createdAt: 'desc' },
           include: {
@@ -166,11 +219,34 @@ const getConversations = async (req, res) => {
                 displayName: true,
                 avatarUrl: true
               }
+            },
+            readBy: {
+              where: {
+                userId
+              }
             }
           }
         },
         _count: {
-          select: { messages: true }
+          select: {
+            messages: {
+              where: {
+                AND: [
+                  { deletedAt: null },
+                  { senderId: { not: userId } },
+                  {
+                    NOT: {
+                      readBy: {
+                        some: {
+                          userId
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
         }
       },
       orderBy: { updatedAt: 'desc' },
@@ -180,29 +256,49 @@ const getConversations = async (req, res) => {
 
     // Update frequent conversations
     for (const conversation of conversations) {
-      await prisma.frequentConversation.upsert({
+      const existingFrequent = await prisma.frequentConversation.findFirst({
         where: {
-          userId_conversationId: {
-            userId,
-            conversationId: conversation.id
-          }
-        },
-        update: {
-          accessCount: { increment: 1 },
-          lastAccessed: new Date()
-        },
-        create: {
           userId,
-          conversationId: conversation.id,
-          accessCount: 1
+          conversationId: conversation.id
         }
       });
+
+      if (existingFrequent) {
+        await prisma.frequentConversation.update({
+          where: { id: existingFrequent.id },
+          data: {
+            accessCount: { increment: 1 },
+            lastAccessed: new Date()
+          }
+        });
+      } else {
+        await prisma.frequentConversation.create({
+          data: {
+            userId,
+            conversationId: conversation.id,
+            accessCount: 1
+          }
+        });
+      }
     }
+
+    // Format conversations with unread count and last message
+    const formattedConversations = conversations.map(conv => ({
+      ...conv,
+      unreadCount: conv._count.messages,
+      lastMessage: conv.messages[0] ? {
+        id: conv.messages[0].id,
+        senderId: conv.messages[0].senderId,
+        messageText: conv.messages[0].messageText,
+        createdAt: conv.messages[0].createdAt,
+        read: conv.messages[0].readBy.length > 0
+      } : null
+    }));
 
     res.json({
       success: true,
       data: {
-        conversations,
+        conversations: formattedConversations,
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
@@ -229,7 +325,7 @@ const getMessages = async (req, res) => {
   try {
     const { conversationId } = req.params;
     const { userId } = req;
-    const { page = 1, limit = 50 } = req.query;
+    const { page = 1, limit = 50, threadId } = req.query;
 
     // Check if user is participant in conversation
     const participant = await prisma.conversationParticipant.findFirst({
@@ -248,40 +344,113 @@ const getMessages = async (req, res) => {
 
     const skip = (page - 1) * limit;
 
-    const messages = await prisma.message.findMany({
-      where: {
-        conversationId,
-        deletedAt: null
-      },
-      include: {
-        sender: {
-          select: {
-            id: true,
-            email: true,
-            displayName: true,
-            avatarUrl: true
-          }
-        },
-        reactions: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                displayName: true
-              }
+    const messages = await prisma.$transaction(async (tx) => {
+      // First find all unread messages
+      const unreadMessages = await tx.message.findMany({
+        where: {
+          conversationId,
+          deletedAt: null,
+          senderId: { not: userId },
+          NOT: {
+            readBy: {
+              some: { userId }
             }
           }
-        }
-      },
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: parseInt(limit)
+        },
+        select: { id: true }
+      });
+
+      // Mark all unread messages as read
+      if (unreadMessages.length > 0) {
+        await tx.messageRead.createMany({
+          data: unreadMessages.map(msg => ({
+            messageId: msg.id,
+            userId
+          }))
+        });
+      }
+
+      // Then fetch all messages with their data
+      return await tx.message.findMany({
+        where: {
+          conversationId,
+          deletedAt: null,
+          ...(threadId ? {
+            OR: [
+              { id: threadId }, // Include the thread starter
+              { threadId: threadId } // Include all messages in the thread
+            ]
+          } : {
+            threadId: null // Only show root messages when not viewing a thread
+          })
+        },
+        include: {
+          sender: {
+            select: {
+              id: true,
+              email: true,
+              displayName: true,
+              avatarUrl: true
+            }
+          },
+          reactions: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  displayName: true
+                }
+              }
+            }
+          },
+          parent: {
+            select: {
+              id: true,
+              messageText: true,
+              sender: {
+                select: {
+                  id: true,
+                  displayName: true
+                }
+              }
+            }
+          },
+          thread: {
+            select: {
+              id: true,
+              messageText: true,
+              sender: {
+                select: {
+                  id: true,
+                  displayName: true
+                }
+              }
+            }
+          },
+          readBy: {
+            where: { userId },
+            select: { readAt: true }
+          },
+          _count: {
+            select: {
+              childMessages: true,
+              threadMessages: true
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: parseInt(limit)
+      });
     });
+
+    // Sort messages in ascending order for chat
+    const sortedMessages = messages.toReversed();
 
     res.json({
       success: true,
       data: {
-        messages: messages.reverse(), // Return in ascending order for chat
+        messages: sortedMessages,
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
@@ -305,9 +474,15 @@ const getMessages = async (req, res) => {
  * @access Private
  */
 const sendMessage = async (req, res) => {
+  const startTime = Date.now();
+  console.log(`🔍 Send message request started for conversation: ${req.params.conversationId}`);
+  console.log(`📝 Request body:`, req.body);
+  console.log(`👤 User ID: ${req.userId}, Tenant ID: ${req.tenantId}`);
+  
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.error('❌ Validation errors:', errors.array());
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
@@ -316,10 +491,51 @@ const sendMessage = async (req, res) => {
     }
 
     const { conversationId } = req.params;
-    const { messageText, fileUrl, messageType = 'text' } = req.body;
+    const { messageText, fileUrl, messageType = 'text', parentId, threadId } = req.body;
     const { userId, tenantId } = req;
 
+    console.log(`📨 Processing message:`, { conversationId, messageText, messageType, parentId, threadId });
+
+    // If this is a reply, verify the parent message exists and is accessible
+    if (parentId) {
+      const parentMessage = await prisma.message.findFirst({
+        where: {
+          id: parentId,
+          conversationId,
+          deletedAt: null
+        }
+      });
+
+      if (!parentMessage) {
+        console.error(`❌ Parent message not found: ${parentId}`);
+        return res.status(404).json({
+          success: false,
+          message: 'Parent message not found'
+        });
+      }
+    }
+
+    // If this is a thread message, verify the thread exists
+    if (threadId) {
+      const threadMessage = await prisma.message.findFirst({
+        where: {
+          id: threadId,
+          conversationId,
+          deletedAt: null
+        }
+      });
+
+      if (!threadMessage) {
+        console.error(`❌ Thread message not found: ${threadId}`);
+        return res.status(404).json({
+          success: false,
+          message: 'Thread not found'
+        });
+      }
+    }
+
     // Check if user is participant in conversation
+    console.log(`🔍 Checking if user ${userId} is participant in conversation ${conversationId}`);
     const participant = await prisma.conversationParticipant.findFirst({
       where: {
         conversationId,
@@ -328,58 +544,114 @@ const sendMessage = async (req, res) => {
     });
 
     if (!participant) {
+      console.error(`❌ User ${userId} is not a participant in conversation ${conversationId}`);
       return res.status(403).json({
         success: false,
         message: 'Not authorized to send messages to this conversation'
       });
     }
 
-    // Create message
-    const message = await prisma.message.create({
-      data: {
-        conversationId,
-        senderId: userId,
-        messageText,
-        fileUrl,
-        messageType
-      },
-      include: {
-        sender: {
-          select: {
-            id: true,
-            email: true,
-            displayName: true,
-            avatarUrl: true
+    console.log(`✅ Authorization check completed in ${Date.now() - startTime}ms`);
+
+    // Create message with threading support - add timeout to prevent hanging
+    const messagePromise = prisma.$transaction(async (tx) => {
+      console.log(`🔄 Starting database transaction for message creation`);
+      
+      // First create the message without the vector
+      const newMessage = await tx.message.create({
+        data: {
+          conversationId,
+          senderId: userId,
+          messageText,
+          fileUrl,
+          messageType,
+          parentId,
+          threadId,
+          readBy: {
+            create: {
+              userId // Mark as read by sender
+            }
           }
         },
-        conversation: {
-          include: {
-            participants: true
-          }
+        include: {
+          sender: {
+            select: {
+              id: true,
+              email: true,
+              displayName: true,
+              avatarUrl: true
+            }
+          },
+          conversation: {
+            include: {
+              participants: true
+            }
+          },
+          readBy: true
+        }
+      });
+
+      console.log(`✅ Message created with ID: ${newMessage.id}`);
+
+      // Then update the message with the vector if there's text
+      if (messageText) {
+        try {
+          await tx.$executeRaw`
+            UPDATE "Message"
+            SET "messageVector" = to_tsvector('english', ${messageText}::text)
+            WHERE id = ${newMessage.id}
+          `;
+          console.log(`✅ Message vector updated successfully`);
+        } catch (vectorError) {
+          console.error('⚠️ Vector update failed, continuing without vector:', vectorError);
+          // Don't fail the entire transaction if vector update fails
         }
       }
+
+      return newMessage;
     });
+
+    // Add timeout to prevent hanging
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Message creation timeout')), 15000); // 15 second timeout
+    });
+
+    const message = await Promise.race([messagePromise, timeoutPromise]);
+    console.log(`✅ Message created in ${Date.now() - startTime}ms`);
 
     // Update conversation's updatedAt
-    await prisma.conversation.update({
-      where: { id: conversationId },
-      data: { updatedAt: new Date() }
-    });
+    try {
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { updatedAt: new Date() }
+      });
+      console.log(`✅ Conversation updated in ${Date.now() - startTime}ms`);
+    } catch (updateError) {
+      console.error('⚠️ Failed to update conversation timestamp:', updateError);
+      // Don't fail the entire operation
+    }
 
     // Create audit log
-    await prisma.auditLog.create({
-      data: {
-        tenantId,
-        userId,
-        action: 'MESSAGE_SENT',
-        targetId: message.id,
-        context: `Message sent in conversation ${conversationId}`
-      }
-    });
+    try {
+      await prisma.auditLog.create({
+        data: {
+          tenantId,
+          userId,
+          action: 'MESSAGE_SENT',
+          targetId: message.id,
+          context: `Message sent in conversation ${conversationId}`
+        }
+      });
+      console.log(`✅ Audit log created in ${Date.now() - startTime}ms`);
+    } catch (auditError) {
+      console.error('⚠️ Failed to create audit log:', auditError);
+      // Don't fail the entire operation
+    }
 
     // Emit real-time message to all participants
     const io = req.app.get('io');
     if (io) {
+      console.log(`📡 Emitting new-message event to conversation ${conversationId}`);
       io.to(conversationId).emit('new-message', {
         message: {
           id: message.id,
@@ -392,8 +664,22 @@ const sendMessage = async (req, res) => {
           sender: message.sender
         }
       });
+      
+      // Emit user activity event to update sender's status to online
+      io.to(conversationId).emit('user-activity', {
+        userId: userId,
+        conversationId: conversationId,
+        activityType: 'message_sent',
+        timestamp: new Date()
+      });
+      console.log(`✅ Socket events emitted successfully`);
+    } else {
+      console.warn('⚠️ Socket.IO not available, real-time updates disabled');
     }
 
+    const totalTime = Date.now() - startTime;
+    console.log(`✅ Message sent successfully in ${totalTime}ms`);
+    
     res.status(201).json({
       success: true,
       message: 'Message sent successfully',
@@ -401,10 +687,22 @@ const sendMessage = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Send message error:', error);
+    const totalTime = Date.now() - startTime;
+    console.error(`❌ Send message error after ${totalTime}ms:`, error);
+    
+    // If it's a timeout, try to send a basic response
+    if (error.message === 'Message creation timeout') {
+      return res.status(408).json({
+        success: false,
+        message: 'Message creation timed out. Please try again.',
+        error: 'TIMEOUT'
+      });
+    }
+    
     res.status(500).json({
       success: false,
-      message: 'Server error while sending message'
+      message: 'Server error while sending message',
+      error: error.message
     });
   }
 };

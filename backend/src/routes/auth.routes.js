@@ -428,6 +428,115 @@ router.post('/logout', auth, authController.logout);
 
 /**
  * @swagger
+ * /api/auth/health:
+ *   get:
+ *     summary: Health check endpoint
+ *     tags: [System]
+ *     responses:
+ *       200:
+ *         description: System is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: System is healthy
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ */
+router.get('/health', async (req, res) => {
+  try {
+    const { prisma } = require('../utils/prisma');
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({
+      success: true,
+      message: 'System is healthy',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Health check failed:', error);
+    res.status(500).json({
+      success: false,
+      message: 'System is unhealthy',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/logout-test:
+ *   post:
+ *     summary: Test logout endpoint (no auth required)
+ *     tags: [System]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 description: User ID to logout
+ *     responses:
+ *       200:
+ *         description: Logout test completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Logout test completed
+ */
+router.post('/logout-test', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'userId is required'
+      });
+    }
+    
+    const { prisma } = require('../utils/prisma');
+    await prisma.user.update({
+      where: { id: userId },
+      data: { 
+        onlineStatus: 'offline',
+        lastSeenAt: new Date()
+      }
+    });
+    
+    res.json({
+      success: true,
+      message: 'Logout test completed',
+      userId
+    });
+  } catch (error) {
+    console.error('Logout test failed:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Logout test failed',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
  * /api/auth/tenant/{domain}:
  *   get:
  *     summary: Discover tenant by domain

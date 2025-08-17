@@ -2,7 +2,7 @@ const express = require('express');
 const { body, param, query, validationResult } = require('express-validator');
 const router = express.Router();
 const { auth } = require('../middleware/auth.middleware');
-const { requireAdmin, requireAdminOrModerator } = require('../middleware/rbac.middleware');
+const { requireAdmin, requireAdminOrModerator, requirePermission } = require('../middleware/rbac.middleware');
 const adminController = require('../controllers/admin.controller');
 
 /**
@@ -107,7 +107,7 @@ router.get('/dashboard', auth, requireAdmin, adminController.getDashboardStats);
  *       500:
  *         description: Server error
  */
-router.get('/users', auth, requireAdminOrModerator, [
+router.get('/users', auth, requirePermission('user.read'), [
   query('page')
     .optional()
     .isInt({ min: 1 })

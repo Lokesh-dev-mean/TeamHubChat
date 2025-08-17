@@ -14,13 +14,12 @@ msalInstance.initialize().then(() => {
 }).catch(error => {
   console.error('MSAL initialization failed:', error);
 });
-import TenantRegister from './pages/TenantRegister';
+import Register from './pages/Register';
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
+import Layout from './layouts/Layout';
 import NotFound from './pages/NotFound';
 import LoadingScreen from './components/LoadingScreen';
-import GoogleCallback from './pages/GoogleCallback';
-import OAuthTest from './pages/OAuthTest';
+import GoogleCallback from './pages/GoogleCallback'; 
 import Invite from './pages/Invite';
 import AcceptInvite from './pages/AcceptInvite';
 
@@ -139,86 +138,79 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return !isAuthenticated ? <>{children}</> : <Navigate to="/chat" replace />;
 };
 
-// App Routes Component
-const AppRoutes: React.FC = () => {
-  return (
-    <Routes>
-      {/* Public Routes */}
-      <Route
-        path="/"
-        element={
-          <PublicRoute>
-            <Login />
-          </PublicRoute>
-        }
-      />
-      <Route
-        path="/login"
-        element={
-          <PublicRoute>
-            <Login />
-          </PublicRoute>
-        }
-      />
-      <Route
-        path="/login/:domain"
-        element={
-          <PublicRoute>
-            <Login />
-          </PublicRoute>
-        }
-      />
-      <Route
-        path="/register"
-        element={
-          <PublicRoute>
-            <TenantRegister />
-          </PublicRoute>
-        }
-      />
-
-      {/* Public invite routes */}
-      <Route path="/invite/:inviteToken" element={<Invite />} />
-      <Route path="/organization/invite/:inviteToken" element={<Invite />} />
-      <Route path="/invite/:inviteToken/accept" element={<AcceptInvite />} />
-
-      {/* OAuth Callback Routes */}
-      <Route path="/auth/google/callback" element={<GoogleCallback />} />
-      
-      {/* Test Routes */}
-      <Route path="/oauth-test" element={<OAuthTest />} />
-
-      {/* Protected Routes (root) */}
-      <Route
-        path="/*"
-        element={
-          <ProtectedRoute>
-            <Dashboard />
-          </ProtectedRoute>
-        }
-      />
-
-      {/* 404 Route */}
-      <Route path="*" element={<NotFound />} />
-    </Routes>
-  );
-};
+ 
 
 // Main App Component
 const App: React.FC = () => {
-  return (
-    <MsalProvider instance={msalInstance}>
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <ToastProvider>
-          <AuthProvider>
-            <Router>
-              <AppRoutes />
-            </Router>
-          </AuthProvider>
-        </ToastProvider>
-      </ThemeProvider>
-    </MsalProvider>
+  return ( 
+      <MsalProvider instance={msalInstance}>
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <ToastProvider>
+            <AuthProvider>
+              <Router> 
+                  <Routes>
+                    {/* Public Routes */}
+                    <Route
+                      path="/"
+                      element={
+                        <PublicRoute>
+                          <Login />
+                        </PublicRoute>
+                      }
+                    />
+                    <Route
+                      path="/login"
+                      element={
+                        <PublicRoute>
+                          <Login />
+                        </PublicRoute>
+                      }
+                    />
+                    <Route
+                      path="/login/:domain"
+                      element={
+                        <PublicRoute>
+                          <Login />
+                        </PublicRoute>
+                      }
+                    />
+                    <Route
+                      path="/register"
+                      element={
+                        <PublicRoute>
+                          <Register />
+                        </PublicRoute>
+                      }
+                    />
+
+                    {/* Public invite routes */}
+                    <Route path="/invite/:inviteToken" element={<Invite />} />
+                    <Route path="/organization/invite/:inviteToken" element={<AcceptInvite />} />
+                    <Route path="/invite/:inviteToken/accept" element={<AcceptInvite />} />
+
+                    {/* OAuth Callback Routes */}
+                    <Route path="/auth/google/callback" element={<GoogleCallback />} />
+                    
+                   
+                    {/* Protected Routes (root) */}
+                    <Route
+                      path="/*"
+                      element={
+                        <ProtectedRoute>
+                          <Layout />
+                        </ProtectedRoute>
+                      }
+                    />
+
+                    {/* 404 Route */}
+                    <Route path="*" element={<NotFound />} />
+                  </Routes> 
+              </Router>
+            </AuthProvider>
+          </ToastProvider>
+        </ThemeProvider>
+      </MsalProvider> 
   );
 };
 

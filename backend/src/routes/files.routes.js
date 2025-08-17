@@ -81,7 +81,9 @@ const { upload } = require('../config/storage');
  *       500:
  *         description: Server error
  */
-router.post('/upload', auth, upload.array('files', 10), filesController.uploadFiles);
+const handleUpload = upload.array('files', 10);
+
+router.post('/upload', auth, handleUpload, filesController.uploadFiles);
 
 /**
  * @swagger
@@ -153,7 +155,8 @@ router.get('/', auth, [
   query('fileType')
     .optional()
     .isString()
-    .withMessage('File type must be a string')
+    .withMessage('File type must be a string'),
+  require('../middleware/validation.middleware').validateRequest()
 ], filesController.getUserFiles);
 
 /**
@@ -235,7 +238,8 @@ router.get('/search', auth, [
   query('limit')
     .optional()
     .isInt({ min: 1, max: 100 })
-    .withMessage('Limit must be between 1 and 100')
+    .withMessage('Limit must be between 1 and 100'),
+  require('../middleware/validation.middleware').validateRequest()
 ], filesController.searchFiles);
 
 /**
@@ -310,7 +314,8 @@ router.get('/download/:fileKey', auth, filesController.downloadFile);
 router.get('/:fileId', auth, [
   param('fileId')
     .isUUID()
-    .withMessage('File ID must be a valid UUID')
+    .withMessage('File ID must be a valid UUID'),
+  require('../middleware/validation.middleware').validateRequest()
 ], filesController.getFileDetails);
 
 /**
@@ -341,7 +346,8 @@ router.get('/:fileId', auth, [
 router.delete('/:fileId', auth, [
   param('fileId')
     .isUUID()
-    .withMessage('File ID must be a valid UUID')
+    .withMessage('File ID must be a valid UUID'),
+  require('../middleware/validation.middleware').validateRequest()
 ], filesController.deleteUserFile);
 
 module.exports = router;

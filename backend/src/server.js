@@ -3,7 +3,7 @@ const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
 const config = require('./config/environment');
-const prisma = require('./utils/prisma');
+const { prisma } = require('./utils/prisma');
 const { specs, swaggerUi } = require('./config/swagger');
 const { logger, requestLogger, errorLogger, errorHandler } = require('./middleware/logging.middleware');
 
@@ -58,6 +58,7 @@ app.use('/api/messages', require('./routes/messages.routes'));
 app.use('/api/files', require('./routes/files.routes'));
 app.use('/api/search', require('./routes/search.routes'));
 app.use('/api/admin', require('./routes/admin.routes'));
+app.use('/api/user-status', require('./routes/userStatus.routes'));
 
 // Swagger API documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
@@ -95,14 +96,17 @@ app.set('io', io);
 // Socket.io authentication middleware
 io.use(async (socket, next) => {
   try {
+    console.log(`🔐 Socket authentication attempt from ${socket.handshake.address}`);
     const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace('Bearer ', '');
     
     if (!token) {
+      console.error('❌ No token provided for socket connection');
       return next(new Error('No token provided'));
     }
 
     const jwt = require('jsonwebtoken');
     const decoded = jwt.verify(token, config.jwt.secret);
+    console.log(`✅ JWT verified for user ID: ${decoded.userId}`);
     
     // Get user info
     const user = await prisma.user.findUnique({
@@ -117,6 +121,7 @@ io.use(async (socket, next) => {
     });
 
     if (!user) {
+      console.error(`❌ User not found for ID: ${decoded.userId}`);
       return next(new Error('User not found'));
     }
 
@@ -124,29 +129,47 @@ io.use(async (socket, next) => {
     socket.tenantId = user.tenantId;
     socket.user = user;
     
+    console.log(`✅ Socket authenticated for user: ${user.displayName} (${user.id})`);
     next();
   } catch (error) {
-    console.error('Socket authentication error:', error);
+    console.error('❌ Socket authentication error:', error);
     next(new Error('Authentication failed'));
   }
 });
 
 // Socket.io connection handler
 io.on('connection', (socket) => {
-  console.log(`User ${socket.user.displayName} (${socket.userId}) connected`);
+  console.log(`🔌 User ${socket.user.displayName} (${socket.userId}) connected from ${socket.handshake.address}`);
+  
+  // Update user status to online when they connect
+  prisma.user.update({
+    where: { id: socket.userId },
+    data: {
+      onlineStatus: 'online',
+      lastSeenAt: new Date()
+    }
+  }).then(() => {
+    console.log(`✅ Updated user ${socket.user.displayName} status to online`);
+  }).catch(error => {
+    console.error('❌ Error updating user status on connect:', error);
+  });
+  
   // Join tenant room for org-wide events
   if (socket.tenantId) {
     socket.join(socket.tenantId);
+    console.log(`🏢 User ${socket.user.displayName} joined tenant room: ${socket.tenantId}`);
     // Notify tenant room of activity (used for last active updates)
     io.to(socket.tenantId).emit('user-activity', {
       userId: socket.userId,
-      lastActiveAt: new Date().toISOString()
+      lastActiveAt: new Date().toISOString(),
+      status: 'online'
     });
   }
   
   // Join conversation rooms that user is part of
   socket.on('join-conversations', async () => {
     try {
+      console.log(`🔍 User ${socket.user.displayName} requesting to join conversations`);
       const conversations = await prisma.conversation.findMany({
         where: {
           participants: {
@@ -154,22 +177,24 @@ io.on('connection', (socket) => {
           },
           deletedAt: null
         },
-        select: { id: true }
+        select: { id: true, name: true }
       });
 
       conversations.forEach(conv => {
         socket.join(conv.id);
+        console.log(`💬 User ${socket.user.displayName} joined conversation room: ${conv.name} (${conv.id})`);
       });
 
-      console.log(`User ${socket.user.displayName} joined ${conversations.length} conversation rooms`);
+      console.log(`✅ User ${socket.user.displayName} joined ${conversations.length} conversation rooms`);
     } catch (error) {
-      console.error('Error joining conversations:', error);
+      console.error(`❌ Error joining conversations for user ${socket.user.displayName}:`, error);
     }
   });
 
   // Join specific conversation
   socket.on('join-conversation', async (conversationId) => {
     try {
+      console.log(`🔍 User ${socket.user.displayName} requesting to join conversation: ${conversationId}`);
       // Verify user is participant
       const participant = await prisma.conversationParticipant.findFirst({
         where: {
@@ -180,7 +205,7 @@ io.on('connection', (socket) => {
 
       if (participant) {
         socket.join(conversationId);
-        console.log(`User ${socket.user.displayName} joined conversation: ${conversationId}`);
+        console.log(`✅ User ${socket.user.displayName} joined conversation: ${conversationId}`);
         
         // Notify others that user is online in this conversation
         socket.to(conversationId).emit('user-online', {
@@ -188,9 +213,18 @@ io.on('connection', (socket) => {
           displayName: socket.user.displayName,
           conversationId
         });
+        
+        // Also emit status change event
+        socket.to(conversationId).emit('user-status-change', {
+          userId: socket.userId,
+          status: 'online',
+          updatedAt: new Date()
+        });
+      } else {
+        console.warn(`⚠️ User ${socket.user.displayName} attempted to join unauthorized conversation: ${conversationId}`);
       }
     } catch (error) {
-      console.error('Error joining conversation:', error);
+      console.error(`❌ Error joining conversation ${conversationId} for user ${socket.user.displayName}:`, error);
     }
   });
 
@@ -241,8 +275,16 @@ io.on('connection', (socket) => {
   socket.on('update-status', async (status) => {
     try {
       if (['online', 'away', 'busy', 'offline'].includes(status)) {
-        // Update user status in database if you have that field
-        // For now, just broadcast to all user's conversations
+        // Update user status in database
+        await prisma.user.update({
+          where: { id: socket.userId },
+          data: {
+            onlineStatus: status,
+            lastSeenAt: new Date()
+          }
+        });
+
+        // Broadcast to all user's conversations
         const conversations = await prisma.conversation.findMany({
           where: {
             participants: {
@@ -253,7 +295,7 @@ io.on('connection', (socket) => {
         });
 
         conversations.forEach(conv => {
-          socket.to(conv.id).emit('user-status-changed', {
+          socket.to(conv.id).emit('user-status-change', {
             userId: socket.userId,
             status,
             updatedAt: new Date()
@@ -274,11 +316,85 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Handle user activity (typing, sending messages, etc.)
+  socket.on('user-activity', async () => {
+    try {
+      // Update user's last seen and status to online
+      await prisma.user.update({
+        where: { id: socket.userId },
+        data: {
+          onlineStatus: 'online',
+          lastSeenAt: new Date()
+        }
+      });
+
+      // Broadcast status change to all user's conversations
+      const conversations = await prisma.conversation.findMany({
+        where: {
+          participants: {
+          some: { userId: socket.userId }
+          }
+        },
+        select: { id: true }
+      });
+
+      conversations.forEach(conv => {
+        socket.to(conv.id).emit('user-status-change', {
+          userId: socket.userId,
+          status: 'online',
+          updatedAt: new Date()
+        });
+      });
+
+      // Org-wide activity update
+      if (socket.tenantId) {
+        io.to(socket.tenantId).emit('user-activity', {
+          userId: socket.userId,
+          lastActiveAt: new Date().toISOString(),
+          status: 'online'
+        });
+      }
+    } catch (error) {
+      console.error('Error handling user activity:', error);
+    }
+  });
+
+  // Handle test connection events
+  socket.on('test-connection', (data) => {
+    console.log(`🧪 Test connection from user ${socket.userId}:`, data);
+    // Send back a test response to verify the connection is working
+    socket.emit('test-connection-response', {
+      success: true,
+      userId: socket.userId,
+      timestamp: new Date().toISOString(),
+      message: 'Connection test successful'
+    });
+  });
+
+  // Handle ping events for connection health checks
+  socket.on('ping', (data) => {
+    console.log(`🏓 Ping received from user ${socket.userId}:`, data);
+    // Send back a pong response
+    socket.emit('pong', {
+      timestamp: new Date().toISOString(),
+      message: 'Connection healthy'
+    });
+  });
+
   // Disconnect handler
   socket.on('disconnect', async () => {
     console.log(`User ${socket.user.displayName} disconnected`);
     
     try {
+      // Update user status to offline in database
+      await prisma.user.update({
+        where: { id: socket.userId },
+        data: {
+          onlineStatus: 'offline',
+          lastSeenAt: new Date()
+        }
+      });
+
       // Notify all conversations that user is offline
       const conversations = await prisma.conversation.findMany({
         where: {
@@ -293,6 +409,13 @@ io.on('connection', (socket) => {
         socket.to(conv.id).emit('user-offline', {
           userId: socket.userId,
           conversationId: conv.id
+        });
+        
+        // Also emit status change event
+        socket.to(conv.id).emit('user-status-change', {
+          userId: socket.userId,
+          status: 'offline',
+          updatedAt: new Date()
         });
       });
 

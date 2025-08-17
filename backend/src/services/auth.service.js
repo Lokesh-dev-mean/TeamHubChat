@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
 const axios = require('axios');
 const config = require('../config/environment');
-const prisma = require('../utils/prisma');
+const { prisma } = require('../utils/prisma');
 const { convertBigIntToNumber, parseJsonFields } = require('../utils/serialization');
 const { createError } = require('../utils/errors');
 
@@ -80,9 +80,11 @@ class AuthService {
 
     const result = await prisma.$transaction(async (tx) => {
       // Create tenant with default settings
+      const slug = await this.generateUniqueSlug(tenantData.tenantName);
       const tenant = await tx.tenant.create({
         data: {
           name: tenantData.tenantName,
+          slug,
           settings: {
             create: config.tenant.defaultSettings,
           },
@@ -98,6 +100,8 @@ class AuthService {
           isActive: true,
           tenantId: tenant.id,
           lastLoginAt: new Date(),
+          onlineStatus: 'online',
+          lastSeenAt: new Date(),
           passwordHash: await this.hashPassword(password),
         },
         include: {
@@ -155,7 +159,21 @@ class AuthService {
 
     await this.updateLastLogin(user.id);
     await this.createLoginAuditLog(user.id, user.tenantId, 'Email login');
-
+    
+    // Update user status to online
+    try {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { 
+          onlineStatus: 'online',
+          lastSeenAt: new Date()
+        }
+      });
+    } catch (error) {
+      console.error('Error updating user status on login:', error);
+      // Don't fail login if status update fails
+    }
+  
     const token = this.generateToken(user.id, user.tenantId);
     return {
       user: this.formatUserResponse(user),
@@ -206,12 +224,17 @@ class AuthService {
       throw createError.notFound('Invalid invitation token');
     }
 
-    // Expire if past due
+    // Check invitation status
+    if (invitation.status === 'revoked') {
+      throw createError.validation('This invitation has been revoked. Please contact the organization administrator for a new invitation.');
+    }
+
+    // Check expiration
     if (invitation.status !== 'pending' || new Date(invitation.expiresAt) < new Date()) {
       if (invitation.status === 'pending' && new Date(invitation.expiresAt) < new Date()) {
         await prisma.invitation.update({ where: { id: invitation.id }, data: { status: 'expired' } });
       }
-      throw createError.validation('Invalid or expired invitation');
+      throw createError.validation('This invitation has expired. Please contact the organization administrator for a new invitation.');
     }
 
     let permissions = [];
@@ -390,6 +413,21 @@ class AuthService {
         }
         await this.updateLastLogin(user.id);
         await this.createLoginAuditLog(user.id, user.tenantId, 'Microsoft OAuth login');
+        
+        // Update user status to online
+        try {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { 
+              onlineStatus: 'online',
+              lastSeenAt: new Date()
+            }
+          });
+        } catch (error) {
+          console.error('Error updating user status on Microsoft OAuth login:', error);
+          // Don't fail login if status update fails
+        }
+        
         const token = this.generateToken(user.id, user.tenantId);
         return {
           user: this.formatUserResponse(user),
@@ -403,9 +441,11 @@ class AuthService {
 
         // Create tenant and user
         const result = await prisma.$transaction(async (prisma) => {
+          const slug = await this.generateUniqueSlug(tenantName);
           const tenant = await prisma.tenant.create({
             data: {
               name: tenantName,
+              slug,
               settings: {
                 create: config.tenant.defaultSettings
               }
@@ -420,6 +460,8 @@ class AuthService {
               isActive: true,
               tenantId: tenant.id,
               lastLoginAt: new Date(),
+              onlineStatus: 'online',
+              lastSeenAt: new Date(),
               passwordHash: await this.hashPassword(Math.random().toString(36).slice(-8))
             },
             include: {
@@ -492,11 +534,26 @@ class AuthService {
       if (!user.isActive) {
         throw createError.authorization('Account is deactivated. Please contact your administrator.');
       }
-      if (tenantData && tenantData.tenantName) {
+      if (tenantData?.tenantName) {
         throw createError.conflict('An account already exists for this email. Please sign in instead of creating a new organization.');
       }
       await this.updateLastLogin(user.id);
       await this.createLoginAuditLog(user.id, user.tenantId, 'Google OAuth login');
+      
+      // Update user status to online
+      try {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { 
+            onlineStatus: 'online',
+            lastSeenAt: new Date()
+          }
+        });
+      } catch (error) {
+        console.error('Error updating user status on Google OAuth login:', error);
+        // Don't fail login if status update fails
+      }
+      
       const token = this.generateToken(user.id, user.tenantId);
       return {
         user: this.formatUserResponse(user),
@@ -512,9 +569,11 @@ class AuthService {
 
       // Create tenant and user
       const result = await prisma.$transaction(async (prisma) => {
+        const slug = await this.generateUniqueSlug(tenantName);
         const tenant = await prisma.tenant.create({
           data: {
             name: tenantName,
+            slug,
             settings: {
               create: config.tenant.defaultSettings
             }
@@ -530,6 +589,8 @@ class AuthService {
               isActive: true,
               tenantId: tenant.id,
               lastLoginAt: new Date(),
+              onlineStatus: 'online',
+              lastSeenAt: new Date(),
               passwordHash: await this.hashPassword(Math.random().toString(36).slice(-8))
             },
             include: {
@@ -566,9 +627,72 @@ class AuthService {
   }
 
   // Helper methods
+  generateSlug(name) {
+    return name
+      .toLowerCase()
+      .replace(/([^a-z0-9])+/g, '-') // Replace non-alphanumeric chars with hyphens
+      .replace(/(^-+)|(-+$)/g, '') // Remove leading/trailing hyphens
+      .substring(0, 50); // Limit length
+  }
+
+  async generateUniqueSlug(name) {
+    let slug = this.generateSlug(name);
+    let counter = 1;
+    let uniqueSlug = slug;
+
+    // Keep checking until we find a unique slug
+    while (true) {
+      const existing = await prisma.tenant.findUnique({
+        where: { slug: uniqueSlug }
+      });
+
+      if (!existing) {
+        return uniqueSlug;
+      }
+
+      // If slug exists, append a number and try again
+      uniqueSlug = `${slug}-${counter}`;
+      counter++;
+    }
+  }
+
   async logout(userId) {
-    // Update last login time to mark the session end
-    await this.updateLastLogin(userId);
+    try {
+      // Check database connection first
+      await prisma.$queryRaw`SELECT 1`;
+      console.log(`✅ Database connection verified for logout of user ${userId}`);
+      
+      // Update last login time to mark the session end
+      await this.updateLastLogin(userId);
+      
+      // Update user status to offline
+      await prisma.user.update({
+        where: { id: userId },
+        data: { 
+          onlineStatus: 'offline',
+          lastSeenAt: new Date()
+        }
+      });
+      
+      console.log(`✅ User ${userId} logged out successfully`);
+    } catch (error) {
+      console.error('Error during logout:', error);
+      
+      // Try to update just the status if the lastLogin update fails
+      try {
+        await prisma.user.update({
+          where: { id: userId },
+          data: { 
+            onlineStatus: 'offline',
+            lastSeenAt: new Date()
+          }
+        });
+        console.log(`✅ User ${userId} status updated to offline despite login update failure`);
+      } catch (statusError) {
+        console.error('Error updating user status on logout:', statusError);
+        // Don't fail logout if both operations fail
+      }
+    }
   }
 
   async exchangeGoogleCode(code, redirectUri) {
@@ -617,10 +741,16 @@ class AuthService {
   }
 
   async updateLastLogin(userId) {
-    await prisma.user.update({
-      where: { id: userId },
-      data: { lastLoginAt: new Date() }
-    });
+    try {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { lastLoginAt: new Date() }
+      });
+      console.log(`✅ Last login updated for user ${userId}`);
+    } catch (error) {
+      console.error(`❌ Error updating last login for user ${userId}:`, error);
+      throw error; // Re-throw to be handled by caller
+    }
   }
 
   async createLoginAuditLog(userId, tenantId, context) {
