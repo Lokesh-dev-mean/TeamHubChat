@@ -38,12 +38,19 @@ const MessageComposer: React.FC<Props> = ({ onSend, sx, disabled }) => {
   };
 
   const handleSend = () => {
+    if (disabled) return;
+    
     const text = editorRef.current?.innerText?.trim() || '';
     if (!text) return;
-    onSend(text);
-    editorRef.current!.innerHTML = '';
-    setShowPlaceholder(true);
-    setExpanded(false);
+    
+    try {
+      onSend(text);
+      editorRef.current!.innerHTML = '';
+      setShowPlaceholder(true);
+      setExpanded(false);
+    } catch (error) {
+      console.error('Error sending message:', error);
+    }
   };
 
   const handleInput = () => {
@@ -96,10 +103,16 @@ const MessageComposer: React.FC<Props> = ({ onSend, sx, disabled }) => {
         <Box
           ref={editorRef}
           component="div"
-          contentEditable
+          contentEditable={!disabled}
           suppressContentEditableWarning
-          onClick={() => setExpanded(true)}
+          onClick={() => !disabled && setExpanded(true)}
           onInput={handleInput}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              handleSend();
+            }
+          }}
           sx={{
             flex: 1,
             minHeight: 40,
@@ -111,7 +124,13 @@ const MessageComposer: React.FC<Props> = ({ onSend, sx, disabled }) => {
             fontSize: '0.9375rem',
             lineHeight: 1.5,
             borderRadius: 1,
-            cursor: 'text',
+            cursor: disabled ? 'not-allowed' : 'text',
+            opacity: disabled ? 0.7 : 1,
+            backgroundColor: disabled ? 'action.disabledBackground' : 'background.paper',
+            '&:focus': {
+              outline: 'none',
+              boxShadow: (theme) => `0 0 0 2px ${theme.palette.primary.main}40`,
+            },
           }}
         />
         {showPlaceholder && !expanded && (
@@ -127,10 +146,18 @@ const MessageComposer: React.FC<Props> = ({ onSend, sx, disabled }) => {
             Type a message
           </Box>
         )}
-        <IconButton size="small"><EmojiEmotions fontSize="small" /></IconButton>
-        <IconButton size="small"><AttachFile fontSize="small" /></IconButton>
-        <IconButton size="small"><MoreVert fontSize="small" /></IconButton>
-        <IconButton size="small" color="primary" onClick={handleSend}><Send fontSize="small" /></IconButton>
+        <IconButton size="small" disabled={disabled}><EmojiEmotions fontSize="small" /></IconButton>
+        <IconButton size="small" disabled={disabled}><AttachFile fontSize="small" /></IconButton>
+        <IconButton size="small" disabled={disabled}><MoreVert fontSize="small" /></IconButton>
+        <IconButton 
+          size="small" 
+          color="primary" 
+          onClick={handleSend}
+          disabled={disabled}
+          sx={disabled ? { color: 'text.disabled' } : {}}
+        >
+          <Send fontSize="small" />
+        </IconButton>
       </Box>
     </Paper>
   );

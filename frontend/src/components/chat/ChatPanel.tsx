@@ -1,5 +1,23 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { List, ListItem, ListItemButton, ListItemAvatar, Avatar, ListItemText, CircularProgress, Badge, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, TextField, Button, Chip } from '@mui/material';
+import React, { useEffect, useRef, useState, useCallback, JSX } from 'react';
+import { 
+  List, 
+  ListItem, 
+  ListItemButton, 
+  ListItemAvatar, 
+  Avatar, 
+  ListItemText, 
+  CircularProgress, 
+  Badge, 
+  IconButton, 
+  Tooltip, 
+  Dialog, 
+  DialogTitle, 
+  DialogContent, 
+  TextField, 
+  Button, 
+  Chip,
+  Box
+} from '@mui/material';
 import {
   Chat as ChatIcon,
   Search as SearchIcon,
@@ -160,7 +178,7 @@ const getPatientStatus = (conversation: Conversation | undefined, userId: string
   return userStatuses[otherUser.id] || 'Offline';
 };
 
-const ChatPanel: React.FC = () => {
+const ChatPanel = (): JSX.Element => {
   const theme = useTheme();
   const { user } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -183,11 +201,18 @@ const ChatPanel: React.FC = () => {
   // Add loading states
   const [sendingMessage, setSendingMessage] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [tempMessageId, setTempMessageId] = useState<string | null>(null);
 
-  // Add scroll handler for infinite loading
+  // Refs
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-
-  // Add socket state
+  const endRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const socketRef = useRef<any>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const maxReconnectAttempts = 5;
+  const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Socket state
   const [socket, setSocket] = useState<any>(null);
   const [socketConnected, setSocketConnected] = useState(false);
 
@@ -200,10 +225,74 @@ const ChatPanel: React.FC = () => {
     }
   };
 
-  const handleSend = () => {
-    // This function is no longer needed as MessageComposer handles sending
-    // It's kept for backward compatibility but the actual sending is done in MessageComposer
-    setScheduleAnchor(null);
+  const handleSend = async (messageText: string) => {
+    if (!active || !user) return;
+    
+    setSendingMessage(true);
+    const tempId = `temp-${Date.now()}`;
+    setTempMessageId(tempId);
+    
+    try {
+      // Create a temporary message for optimistic UI update
+      const newMessage = {
+        id: tempId,
+        conversationId: active.id,
+        senderId: user.id,
+        messageText,
+        createdAt: new Date().toISOString(),
+        read: true
+      };
+      
+      // Optimistically update the UI
+      setMessages(prev => [...prev, newMessage]);
+      
+      // Scroll to bottom
+      setTimeout(() => {
+        endRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+      
+      // Send the message to the server
+      const sentMessage = await sendMessage(active.id, messageText);
+      
+      // Update the message with the server response
+      setMessages(prev => 
+        prev.map(msg => 
+          msg.id === tempId ? { ...msg, id: sentMessage.id } : msg
+        )
+      );
+      
+      // Update the conversation list with the last message
+      setConversations(prev => 
+        prev.map(conv => 
+          conv.id === active.id
+            ? {
+                ...conv,
+                lastMessage: {
+                  id: sentMessage.id,
+                  senderId: sentMessage.senderId,
+                  messageText: sentMessage.messageText,
+                  createdAt: sentMessage.createdAt,
+                  read: true
+                },
+                unreadCount: 0
+              }
+            : conv
+        )
+      );
+      
+      return sentMessage;
+    } catch (error) {
+      console.error('Error sending message:', error);
+      toast.error('Failed to send message. Please try again.');
+      
+      // Remove the optimistic update if there was an error
+      setMessages(prev => prev.filter(msg => msg.id !== tempId));
+      throw error;
+    } finally {
+      setSendingMessage(false);
+      setTempMessageId(null);
+      setScheduleAnchor(null);
+    }
   };
      // Load initial conversations
    useEffect(() => {
@@ -270,6 +359,7 @@ const ChatPanel: React.FC = () => {
   useEffect(() => {
     if (!conversations.length || !user?.id) return;
     
+    refreshUserStatuses(); // Initial refresh
     const interval = setInterval(refreshUserStatuses, 30000); // 30 seconds
     
     return () => clearInterval(interval);
@@ -277,7 +367,7 @@ const ChatPanel: React.FC = () => {
 
   // Update user status to offline when component unmounts or user navigates away
   useEffect(() => {
-    let inactivityTimer: NodeJS.Timeout;
+    if (!user?.id) return;
 
     const resetInactivityTimer = () => {
       if (inactivityTimer) {
@@ -351,29 +441,37 @@ const ChatPanel: React.FC = () => {
     };
 
     // Set up activity listeners
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    document.addEventListener('mousedown', handleUserActivity);
-    document.addEventListener('keydown', handleUserActivity);
-    document.addEventListener('scroll', handleUserActivity);
-    document.addEventListener('touchstart', handleUserActivity);
+    const activityListeners = [
+      { event: 'beforeunload', handler: handleBeforeUnload },
+      { event: 'visibilitychange', handler: handleVisibilityChange },
+      { event: 'mousedown', handler: handleUserActivity },
+      { event: 'keydown', handler: handleUserActivity },
+      { event: 'scroll', handler: handleUserActivity },
+      { event: 'touchstart', handler: handleUserActivity }
+    ];
+
+    // Add all event listeners
+    activityListeners.forEach(({ event, handler }) => {
+      const target = event === 'visibilitychange' ? document : window;
+      target.addEventListener(event as any, handler as any);
+    });
 
     // Start inactivity timer
     resetInactivityTimer();
 
     return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      document.removeEventListener('mousedown', handleUserActivity);
-      document.removeEventListener('keydown', handleUserActivity);
-      document.removeEventListener('scroll', handleUserActivity);
-      document.removeEventListener('touchstart', handleUserActivity);
+      // Remove all event listeners
+      activityListeners.forEach(({ event, handler }) => {
+        const target = event === 'visibilitychange' ? document : window;
+        target.removeEventListener(event as any, handler as any);
+      });
       
-      if (inactivityTimer) {
-        clearTimeout(inactivityTimer);
+      // Clear any pending timeouts
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current);
       }
       
-      // Also update status to offline when component unmounts
+      // Update status to offline when component unmounts
       if (user?.id) {
         userStatusService.updateUserStatus(user.id, 'offline').catch(error => {
           console.error('Error updating user status on unmount:', error);
@@ -417,9 +515,7 @@ const ChatPanel: React.FC = () => {
 
   // Socket connection and event handlers
   useEffect(() => {
-    let newSocket: any = null;
-    let reconnectAttempts = 0;
-    const maxReconnectAttempts = 5;
+    if (!user) return;
     
     const connectSocket = () => {
       try {
@@ -739,12 +835,39 @@ const ChatPanel: React.FC = () => {
     return () => clearInterval(healthCheckInterval);
   }, [socket, socketConnected]);
 
-  // Clear messages when switching conversations
+  // Load messages when active conversation changes
   useEffect(() => {
-    if (active) {
-      setMessages([]); // Clear messages when switching conversations
-    }
-  }, [active?.id]);
+    if (!active?.id) return;
+    
+    const loadMessages = async () => {
+      try {
+        setLoading(true);
+        const data = await getMessages(active.id);
+        setMessages(data.messages || []);
+        
+        // Mark messages as read
+        if (socket && socket.connected) {
+          socket.emit('mark-messages-read', { 
+            conversationId: active.id 
+          });
+        }
+        
+        // Scroll to bottom after a short delay to ensure DOM is updated
+        setTimeout(() => {
+          if (endRef.current) {
+            endRef.current.scrollIntoView({ behavior: 'smooth' });
+          }
+        }, 100);
+      } catch (error) {
+        console.error('Error loading messages:', error);
+        toast.error('Failed to load messages');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadMessages();
+  }, [active?.id, socket]);
 
   useEffect(() => {
     (async () => {
@@ -770,17 +893,32 @@ const ChatPanel: React.FC = () => {
     })();
   }, [active]);
 
-  // Add scroll handler for infinite loading
+  // Handle scroll for infinite loading
   const handleScroll = useCallback(() => {
     const container = messagesContainerRef.current;
-    if (!container || loadingMore) return;
+    if (!container || loadingMore || !active?.id) return;
     
-    if (container.scrollTop === 0) {
+    // Load more messages when scrolling near the top
+    if (container.scrollTop < 100) {
       setLoadingMore(true);
-      // Load more messages here
-      // After loading, setLoadingMore(false)
+      
+      // Simulate loading more messages (replace with actual API call)
+      const loadMore = async () => {
+        try {
+          // TODO: Implement actual pagination
+          // const data = await getMessages(active.id, nextPage);
+          // setMessages(prev => [...(data.messages || []), ...prev]);
+        } catch (error) {
+          console.error('Error loading more messages:', error);
+          toast.error('Failed to load more messages');
+        } finally {
+          setLoadingMore(false);
+        }
+      };
+      
+      loadMore();
     }
-  }, [loadingMore]);
+  }, [loadingMore, active?.id]);
 
   // Real-time status updates would be handled here via WebSocket
   // when users change their status or go online/offline
@@ -795,7 +933,59 @@ const ChatPanel: React.FC = () => {
     // For now, status is static based on user ID
   }, [active]);
 
-  // handled by MessageComposer
+  // Handle new message from socket
+  useEffect(() => {
+    if (!socket || !user) return;
+
+    const handleNewMessage = (payload: { message?: MessageItem & { conversationId: string } }) => {
+      const message = payload?.message;
+      if (!message) return;
+
+      console.log('📨 New message received:', message);
+
+      // Update messages if it's for the active conversation
+      setMessages(prev => {
+        // Check if message already exists
+        if (prev.some(m => m.id === message.id)) return prev;
+        
+        return [...prev, message];
+      });
+
+      // Update conversation list with the new last message
+      setConversations(prev => 
+        prev.map(conv => {
+          if (conv.id === message.conversationId) {
+            return {
+              ...conv,
+              lastMessage: {
+                id: message.id,
+                senderId: message.senderId,
+                messageText: message.messageText,
+                createdAt: message.createdAt,
+                read: message.senderId === user.id // Mark as read if it's our own message
+              },
+              unreadCount: message.senderId === user.id ? 0 : (conv.unreadCount || 0) + 1
+            };
+          }
+          return conv;
+        })
+      );
+
+      // Scroll to bottom if it's the active conversation
+      if (active?.id === message.conversationId) {
+        setTimeout(() => {
+          if (endRef.current) {
+            endRef.current.scrollIntoView({ behavior: 'smooth' });
+          }
+        }, 100);
+      }
+    };
+
+    socket.on('new-message', handleNewMessage);
+    return () => {
+      socket.off('new-message', handleNewMessage);
+    };
+  }, [socket, active?.id, user]);
 
   if (loading) return <div className="p-8 flex justify-center"><CircularProgress /></div>;
 
@@ -1151,30 +1341,19 @@ const ChatPanel: React.FC = () => {
           <div ref={endRef} />
         </div>
 
-        {/* Message Input - Fixed at bottom */}
+        {/* Message Input */}
         <div className="p-4 border-t border-gray-200 bg-white">
-          {/* Connection status warning */}
-          {!socketConnected && (
-            <div className="mb-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-yellow-800 text-sm">
-                  <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-                  <span>Real-time connection lost. Messages may not update in real-time.</span>
-                </div>
-                <button
-                  onClick={() => {
-                    if (socket) {
-                      console.log('Manual reconnect attempt...');
-                      socket.connect();
-                    }
-                  }}
-                  className="px-3 py-1 text-xs bg-yellow-600 text-white rounded hover:bg-yellow-700 transition-colors"
-                >
-                  Reconnect
-                </button>
-              </div>
+          <MessageComposer 
+            onSend={handleSend} 
+            disabled={!active || sendingMessage} 
+          />
+          {sendingMessage && (
+            <div className="mt-2 text-sm text-gray-500 flex items-center">
+              <CircularProgress size={16} className="mr-2" />
+              Sending...
             </div>
           )}
+        </div>
           
           <div className="flex items-end gap-3 bg-gray-50 rounded-xl p-3 border border-gray-200 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
             {/* Left side actions - File attachment */}
